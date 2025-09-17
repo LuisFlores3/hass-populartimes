@@ -5,6 +5,7 @@ import logging
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity, SensorStateClass
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
+from homeassistant.config_entries import SOURCE_IMPORT
 import homeassistant.helpers.config_validation as cv
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 import voluptuous as vol
@@ -23,39 +24,46 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 SCAN_INTERVAL = timedelta(minutes=10)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
+    """Backward-compat entry point; delegate to async variant."""
+    hass.async_create_task(async_setup_platform(hass, config, add_entities, discovery_info))
+
+
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Migrate YAML-defined sensor to a config entry and stop setting up from YAML."""
-    from .const import DOMAIN  # Local import to avoid HA import errors in editors
+    from .const import DOMAIN  # Local import to avoid editor false positives
 
-    name = config[CONF_NAME]
-    address = config[CONF_ADDRESS]
+    name: str = config[CONF_NAME]
+    address: str = config[CONF_ADDRESS]
 
-    async def _migrate_yaml_to_entry() -> None:
-        # Avoid duplicate entries if already configured
-        for entry in hass.config_entries.async_entries(DOMAIN):
-            if entry.data.get(CONF_ADDRESS) == address:
-                return
+    norm_addr = address.strip().lower()
 
-        await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": "import"},
-            data={CONF_NAME: name, CONF_ADDRESS: address},
-        )
+    # Avoid duplicate entries if already configured (compare normalized address)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_ADDRESS, "").strip().lower() == norm_addr:
+            _LOGGER.debug("YAML import skipped; entry already exists for address '%s'", address)
+            return
 
-        # Notify user that YAML can be removed
-        await hass.services.async_call(
-            "persistent_notification",
-            "create",
-            {
-                "title": "Popular Times migrated",
-                "message": (
-                    f"Imported '{name}' from YAML to UI config. "
-                    "You can now remove it from configuration.yaml."
-                ),
-            },
-            blocking=False,
-        )
+    _LOGGER.debug("Starting YAML -> UI import for Popular Times: name='%s', address='%s'", name, address)
 
-    hass.async_create_task(_migrate_yaml_to_entry())
+    await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_IMPORT},
+        data={CONF_NAME: name, CONF_ADDRESS: address},
+    )
+
+    # Notify user that YAML can be removed
+    await hass.services.async_call(
+        "persistent_notification",
+        "create",
+        {
+            "title": "Popular Times migrated",
+            "message": (
+                f"Imported '{name}' from YAML to UI config. "
+                "You can now remove it from configuration.yaml."
+            ),
+        },
+        blocking=False,
+    )
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
