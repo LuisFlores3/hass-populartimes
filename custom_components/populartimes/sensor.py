@@ -82,8 +82,9 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Popular Times sensor(s) from a config entry."""
-    name = entry.data[CONF_NAME]
-    address = entry.data[CONF_ADDRESS]
+    # Prefer values from options when present to reflect edits without needing a reload
+    name = entry.options.get(CONF_NAME, entry.data[CONF_NAME])
+    address = entry.options.get(CONF_ADDRESS, entry.data[CONF_ADDRESS])
     entity = PopularTimesSensor(name, address)
     async_add_entities([entity], True)
 
@@ -162,8 +163,9 @@ class PopularTimesSensor(SensorEntity):
         """Handle entity added to hass. Sync name/address from entry on reloads."""
         entry = self.platform.config_entry  # type: ignore[assignment]
         if entry:
-            self._name = entry.data.get(CONF_NAME, self._name)
-            self._address = entry.data.get(CONF_ADDRESS, self._address)
+            # Options override data if provided
+            self._name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, self._name))
+            self._address = entry.options.get(CONF_ADDRESS, entry.data.get(CONF_ADDRESS, self._address))
 
     def update(self):
         """Get the latest data from Google Popular Times (via livepopulartimes)."""

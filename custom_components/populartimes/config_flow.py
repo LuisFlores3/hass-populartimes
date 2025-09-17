@@ -105,21 +105,20 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         data = self.config_entry.data
+        # Prefer existing options as the current values if present
+        cur_opts = self.config_entry.options
         defaults = {
-            CONF_NAME: data.get(CONF_NAME, "Popular Times"),
-            CONF_ADDRESS: data.get(CONF_ADDRESS, ""),
+            CONF_NAME: cur_opts.get(CONF_NAME, data.get(CONF_NAME, "Popular Times")),
+            CONF_ADDRESS: cur_opts.get(CONF_ADDRESS, data.get(CONF_ADDRESS, "")),
         }
 
         if user_input is not None:
-            # Persist options (sensor_slug) and update entry data/title for name/address
-            updates = {**data, CONF_NAME: user_input[CONF_NAME], CONF_ADDRESS: user_input[CONF_ADDRESS]}
-            await self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                data=updates,
-                title=user_input[CONF_NAME],
-                options={},
-            )
-            return self.async_create_entry(title="Options", data={})
+            # Save edits as options; the integration will read options first.
+            # Avoid updating entry data/title here to prevent reload races during the flow.
+            return self.async_create_entry(title="Options", data={
+                CONF_NAME: user_input[CONF_NAME],
+                CONF_ADDRESS: user_input[CONF_ADDRESS],
+            })
 
         schema = vol.Schema(
             {
