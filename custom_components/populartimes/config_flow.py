@@ -8,7 +8,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 
 from .const import DOMAIN
 
@@ -69,7 +69,28 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        # No options for now; return empty options to keep the structure ready
+        data = self.config_entry.data
+        defaults = {
+            CONF_NAME: data.get(CONF_NAME, "Popular Times"),
+            CONF_ADDRESS: data.get(CONF_ADDRESS, ""),
+        }
+
         if user_input is not None:
-            return self.async_create_entry(title="Options", data=user_input)
-        return self.async_create_entry(title="Options", data={})
+            # Persist options (sensor_slug) and update entry data/title for name/address
+            updates = {**data, CONF_NAME: user_input[CONF_NAME], CONF_ADDRESS: user_input[CONF_ADDRESS]}
+            await self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=updates,
+                title=user_input[CONF_NAME],
+                options={},
+            )
+            return self.async_create_entry(title="Options", data={})
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_NAME, default=defaults[CONF_NAME]): str,
+                vol.Required(CONF_ADDRESS, default=defaults[CONF_ADDRESS]): str,
+            }
+        )
+
+        return self.async_show_form(step_id="init", data_schema=schema)

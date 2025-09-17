@@ -70,7 +70,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     """Set up Popular Times sensor(s) from a config entry."""
     name = entry.data[CONF_NAME]
     address = entry.data[CONF_ADDRESS]
-    async_add_entities([PopularTimesSensor(name, address)], True)
+    entity = PopularTimesSensor(name, address)
+    async_add_entities([entity], True)
 
 
 class PopularTimesSensor(SensorEntity):
@@ -131,6 +132,13 @@ class PopularTimesSensor(SensorEntity):
     def icon(self) -> str:
         """Return the icon to use in the frontend."""
         return "mdi:chart-bar"
+
+    async def async_added_to_hass(self) -> None:
+        """Handle entity added to hass. Sync name/address from entry on reloads."""
+        entry = self.platform.config_entry  # type: ignore[assignment]
+        if entry:
+            self._name = entry.data.get(CONF_NAME, self._name)
+            self._address = entry.data.get(CONF_ADDRESS, self._address)
 
     def update(self):
         """Get the latest data from Google Popular Times (via livepopulartimes)."""

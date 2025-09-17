@@ -14,4 +14,16 @@
       "already_configured": "This Popular Times address is already configured"
     }
   }
+  ,
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit Popular Times",
+        "data": {
+          "name": "Name",
+          "address": "Address"
+        }
+      }
+    }
+  }
 }
