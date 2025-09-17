@@ -25,7 +25,7 @@ After installing the integration files:
 2. Search for "Popular Times".
 3. Enter:
   - Name: Friendly name for the sensor (e.g., Charlie Browns)
-  - Address: A precise postal address (e.g., "123 Main St, City, State, Country"). The integration will automatically use the Name together with the Address to improve matching.
+  - Address: A precise postal address (e.g., "123 Main St, City, State, Country").
 4. Submit to create the sensor.
 
 Entity ID default for new sensors:
