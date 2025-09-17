@@ -55,11 +55,46 @@ class PopularTimesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         name = user_input[CONF_NAME]
         address = user_input[CONF_ADDRESS]
 
+        # If the YAML address starts with a venue name in parentheses, e.g. "(Li'l Devil's), 255 S Broadway...",
+        # extract that as a nicer Name and clean the Address for storage.
+        name, address = _extract_name_and_clean_address(name, address)
+
         uid = _addr_unique_id(address)
         await self.async_set_unique_id(uid)
         self._abort_if_unique_id_configured()
 
         return self.async_create_entry(title=name, data={CONF_NAME: name, CONF_ADDRESS: address})
+
+
+def _strip_quotes(text: str) -> str:
+    text = text.strip()
+    if (text.startswith("'") and text.endswith("'")) or (text.startswith('"') and text.endswith('"')):
+        return text[1:-1].strip()
+    return text
+
+
+def _looks_like_slug(text: str) -> bool:
+    t = text.strip()
+    return t == t.lower() and any(ch == '_' for ch in t)
+
+
+def _extract_name_and_clean_address(current_name: str, address: str) -> tuple[str, str]:
+    """If address has leading (Name), prefer that as Name and strip it from Address.
+
+    Returns (name, cleaned_address).
+    """
+    cur_name = (current_name or "").strip()
+    addr = _strip_quotes(address or "")
+    if addr.startswith("("):
+        end = addr.find(")")
+        if end > 0:
+            extracted = addr[1:end].strip()
+            rest = addr[end + 1 :].lstrip(", ").strip()
+            if extracted:
+                # Prefer extracted pretty name if current name looks like a slug (e.g., bar_lil_devils)
+                final_name = extracted if (not cur_name or _looks_like_slug(cur_name)) else cur_name
+                return final_name, rest or addr
+    return cur_name or addr, addr
 
 
 class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):

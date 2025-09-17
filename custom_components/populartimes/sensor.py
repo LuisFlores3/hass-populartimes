@@ -9,6 +9,7 @@ from homeassistant.config_entries import SOURCE_IMPORT
 import homeassistant.helpers.config_validation as cv
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 import voluptuous as vol
+from homeassistant.util import slugify
 
 import livepopulartimes
 
@@ -133,6 +134,17 @@ class PopularTimesSensor(SensorEntity):
         """Return the icon to use in the frontend."""
         return "mdi:chart-bar"
 
+    @property
+    def suggested_object_id(self) -> str | None:
+        """Suggest a default object_id derived from the Name.
+
+        Home Assistant uses this only when the entity is first created. Existing
+        entities will keep their current entity_id unless manually changed by the user.
+        """
+        if not self._name:
+            return None
+        return f"bar_{slugify(self._name)}"
+
     async def async_added_to_hass(self) -> None:
         """Handle entity added to hass. Sync name/address from entry on reloads."""
         entry = self.platform.config_entry  # type: ignore[assignment]
@@ -143,7 +155,22 @@ class PopularTimesSensor(SensorEntity):
     def update(self):
         """Get the latest data from Google Popular Times (via livepopulartimes)."""
         try:
-            result = livepopulartimes.get_populartimes_by_address(self._address)
+            # Build a query using both the friendly name and the postal address to improve
+            # venue matching without requiring users to include the name in the address.
+            # If the address already contains the name (common in older YAML setups),
+            # don't prefix it again to avoid duplication like "Name, Name, 123 Main...".
+            name = (self._name or "").strip()
+            address = (self._address or "").strip()
+            if name:
+                n = name.lower()
+                a = address.lower()
+                if a.startswith(n) or a.startswith(f"{n},") or a.startswith(f"{n} "):
+                    query = address
+                else:
+                    query = f"{name}, {address}" if address else name
+            else:
+                query = address
+            result = livepopulartimes.get_populartimes_by_address(query)
             if not result:
                 _LOGGER.warning("No data returned for address '%s'", self._address)
                 return
