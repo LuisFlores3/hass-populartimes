@@ -10,6 +10,7 @@ import homeassistant.helpers.config_validation as cv
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 import voluptuous as vol
 from homeassistant.util import slugify
+from homeassistant.helpers import entity_registry as er
 
 import livepopulartimes
 
@@ -85,16 +86,48 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # Prefer values from options when present to reflect edits without needing a reload
     name = entry.options.get(CONF_NAME, entry.data[CONF_NAME])
     address = entry.options.get(CONF_ADDRESS, entry.data[CONF_ADDRESS])
-    entity = PopularTimesSensor(name, address)
+
+    # Stable unique ID based on the config entry id (not the address), so edits don't create new entities
+    stable_unique_id = f"populartimes_{entry.entry_id}"
+
+    # Migrate any pre-existing entity(ies) for this entry to the new unique_id to avoid orphaning
+    registry = er.async_get(hass)
+    domain = "sensor"
+    platform = "populartimes"
+
+    # Legacy unique_ids were derived from the address hash
+    legacy_uids: list[str] = []
+    for addr in [entry.data.get(CONF_ADDRESS), entry.options.get(CONF_ADDRESS)]:
+        if addr:
+            digest = hashlib.sha256(addr.encode("utf-8")).hexdigest()[:12]
+            legacy_uids.append(f"populartimes_{digest}")
+
+    # If we don't already have an entity with the stable id, migrate a legacy one if present
+    stable_entity_id = registry.async_get_entity_id(domain, platform, stable_unique_id)
+    if not stable_entity_id:
+        for uid in legacy_uids:
+            ent_id = registry.async_get_entity_id(domain, platform, uid)
+            if ent_id:
+                registry.async_update_entity(ent_id, new_unique_id=stable_unique_id)
+                stable_entity_id = ent_id
+                break
+
+    # Remove any other duplicates for this config entry under the old scheme
+    for ent in list(registry.entities.values()):
+        if ent.config_entry_id == entry.entry_id and ent.platform == platform and ent.unique_id != stable_unique_id:
+            registry.async_remove(ent.entity_id)
+
+    entity = PopularTimesSensor(name, address, stable_unique_id)
     async_add_entities([entity], True)
 
 
 class PopularTimesSensor(SensorEntity):
 
-    def __init__(self, name: str, address: str) -> None:
+    def __init__(self, name: str, address: str, unique_id: str) -> None:
         """Initialize the sensor."""
         self._name = name
         self._address = address
+        self._unique_id = unique_id
         self._state: int | None = None
 
         self._attributes: dict[str, object] = {
@@ -140,8 +173,7 @@ class PopularTimesSensor(SensorEntity):
     @property
     def unique_id(self) -> str:
         """Return a unique ID for this sensor instance."""
-        digest = hashlib.sha256(self._address.encode("utf-8")).hexdigest()[:12]
-        return f"populartimes_{digest}"
+        return self._unique_id
 
     @property
     def icon(self) -> str:
