@@ -1,13 +1,19 @@
-"""Support for Google Places API."""
+"""Support for Google Maps Popular Times as a Home Assistant sensor."""
 from datetime import datetime, timedelta
-from homeassistant.components.sensor import PLATFORM_SCHEMA
-from homeassistant.const import (CONF_NAME,CONF_ADDRESS)
-from homeassistant.helpers.entity import Entity
-from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
-import homeassistant.helpers.config_validation as cv
+import hashlib
 import logging
-import livepopulartimes
+
+from homeassistant.components.sensor import (
+    PLATFORM_SCHEMA,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.const import CONF_NAME, CONF_ADDRESS
+import homeassistant.helpers.config_validation as cv
+from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 import voluptuous as vol
+
+import livepopulartimes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,29 +27,31 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 SCAN_INTERVAL = timedelta(minutes=10)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
-    name = config['name']
-    address = config['address']
+    """Set up the Popular Times sensor platform."""
+    name = config[CONF_NAME]
+    address = config[CONF_ADDRESS]
     add_entities([PopularTimesSensor(name, address)], True)
 
 
-class PopularTimesSensor(Entity):
+class PopularTimesSensor(SensorEntity):
 
-    def __init__(self, name, address):
+    def __init__(self, name: str, address: str) -> None:
+        """Initialize the sensor."""
         self._name = name
         self._address = address
-        self._state = None
+        self._state: int | None = None
 
-        self._attributes = {
-            'maps_name': None,
-            'address': None,
-            'popularity_is_live': None,
-            'popularity_monday': None,
-            'popularity_tuesday': None,
-            'popularity_wednesday': None,
-            'popularity_thursday': None,
-            'popularity_friday': None,
-            'popularity_saturday': None,
-            'popularity_sunday': None,
+        self._attributes: dict[str, object] = {
+            "maps_name": None,
+            "address": None,
+            "popularity_is_live": None,
+            "popularity_monday": None,
+            "popularity_tuesday": None,
+            "popularity_wednesday": None,
+            "popularity_thursday": None,
+            "popularity_friday": None,
+            "popularity_saturday": None,
+            "popularity_sunday": None,
         }
 
     @property
@@ -51,54 +59,93 @@ class PopularTimesSensor(Entity):
         return self._name
 
     @property
-    def state(self):
+    def native_value(self):
+        """Return the current popularity as the sensor value."""
+        return self._state
+
+    # Back-compat for older HA versions that still access state
+    @property
+    def state(self):  # pragma: no cover - compatibility shim
         return self._state
     
     @property
     def state_class(self):
         """Return the state class of the sensor."""
-        return "measurement"  
+        return SensorStateClass.MEASUREMENT
 
     @property
-    def unit_of_measurement(self):
-        return '%'
+    def native_unit_of_measurement(self):
+        return "%"
 
     @property
-    def state_attributes(self):
+    def extra_state_attributes(self):
         return self._attributes
 
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID for this sensor instance."""
+        digest = hashlib.sha256(self._address.encode("utf-8")).hexdigest()[:12]
+        return f"populartimes_{digest}"
+
+    @property
+    def icon(self) -> str:
+        """Return the icon to use in the frontend."""
+        return "mdi:chart-bar"
+
     def update(self):
-        """Get the latest data from Google Places API."""
+        """Get the latest data from Google Popular Times (via livepopulartimes)."""
         try:
-
             result = livepopulartimes.get_populartimes_by_address(self._address)
-            popularity = result.get('current_popularity', 0)
-                
-            self._attributes['address'] = result["address"]
-            self._attributes['maps_name'] = result["name"]
-            self._attributes['popularity_monday'] = result["populartimes"][0]["data"]
-            self._attributes['popularity_tuesday'] = result["populartimes"][1]["data"]
-            self._attributes['popularity_wednesday'] = result["populartimes"][2]["data"]
-            self._attributes['popularity_thursday'] = result["populartimes"][3]["data"]
-            self._attributes['popularity_friday'] = result["populartimes"][4]["data"]
-            self._attributes['popularity_saturday'] = result["populartimes"][5]["data"]
-            self._attributes['popularity_sunday'] = result["populartimes"][6]["data"]
+            if not result:
+                _LOGGER.warning("No data returned for address '%s'", self._address)
+                return
 
-            dt = datetime.now()
-            weekdayIndex = dt.weekday()
-            hourIndex = dt.hour
-            historicalDataForWeekday = result["populartimes"][weekdayIndex]["data"]
-            historicalDataForHour = historicalDataForWeekday[hourIndex]
+            popularity = result.get("current_popularity")
 
-            if popularity != None:
-               self._attributes['popularity_is_live'] = True
+            # Attributes: core metadata
+            self._attributes["address"] = result.get("address")
+            self._attributes["maps_name"] = result.get("name")
 
-            if popularity == None:
-                popularity = historicalDataForHour
-                self._attributes['popularity_is_live'] = False
-                _LOGGER.warning("Current popularity info is not live but based on historical data.")
+            # Historical data by weekday
+            try:
+                pop = result.get("populartimes", [])
+                self._attributes["popularity_monday"] = pop[0]["data"] if len(pop) > 0 else None
+                self._attributes["popularity_tuesday"] = pop[1]["data"] if len(pop) > 1 else None
+                self._attributes["popularity_wednesday"] = pop[2]["data"] if len(pop) > 2 else None
+                self._attributes["popularity_thursday"] = pop[3]["data"] if len(pop) > 3 else None
+                self._attributes["popularity_friday"] = pop[4]["data"] if len(pop) > 4 else None
+                self._attributes["popularity_saturday"] = pop[5]["data"] if len(pop) > 5 else None
+                self._attributes["popularity_sunday"] = pop[6]["data"] if len(pop) > 6 else None
+            except (KeyError, IndexError, TypeError):
+                _LOGGER.debug("Historical popularity data missing or malformed for '%s'", self._address)
+
+            # Fallback to historical if live is unavailable
+            if popularity is None:
+                dt = datetime.now()
+                weekday_index = dt.weekday()
+                hour_index = dt.hour
+                try:
+                    historical_data_for_hour = result["populartimes"][weekday_index]["data"][hour_index]
+                    popularity = historical_data_for_hour
+                    self._attributes["popularity_is_live"] = False
+                    _LOGGER.info(
+                        "Using historical popularity (no live data) for '%s'", self._address
+                    )
+                except (KeyError, IndexError, TypeError):
+                    _LOGGER.warning(
+                        "Historical popularity not available to fallback for '%s'", self._address
+                    )
+                    return
+            else:
+                self._attributes["popularity_is_live"] = True
+
+            # Clamp value range to 0..100 just in case
+            if isinstance(popularity, (int, float)):
+                popularity = max(0, min(100, int(popularity)))
 
             self._state = popularity
-                
-        except:
-            _LOGGER.error("No popularity info is returned by the populartimes library.")
+
+        except (ConnectError, HTTPError, Timeout) as req_err:
+            _LOGGER.warning("Network error while fetching popularity for '%s': %s", self._address, req_err)
+        except Exception:  # noqa: BLE001 - log unexpected exceptions with stack
+            _LOGGER.exception("Unexpected error while updating Popular Times for '%s'", self._address)
