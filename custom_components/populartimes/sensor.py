@@ -62,6 +62,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     # Notify user (once per startup) that YAML can be removed
     domain_data = hass.data.setdefault(DOMAIN, {})
     if not domain_data.get("yaml_migration_notified"):
+        # Mark as notified first to avoid any race in quick successive imports
+        domain_data["yaml_migration_notified"] = True
         await hass.services.async_call(
             "persistent_notification",
             "create",
@@ -76,7 +78,6 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             },
             blocking=False,
         )
-        domain_data["yaml_migration_notified"] = True
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
