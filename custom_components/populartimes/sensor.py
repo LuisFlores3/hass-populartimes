@@ -177,8 +177,33 @@ class PopularTimesSensor(SensorEntity):
 
     @property
     def icon(self) -> str:
-        """Return the icon to use in the frontend."""
-        return "mdi:chart-bar"
+        """Return a clock icon indicating the current hour.
+
+        Uses a filled clock when live popularity is available, and an outline clock
+        when falling back to historical data. The hour hand reflects the local hour.
+        """
+        try:
+            hour = datetime.now().hour % 12
+            words = [
+                "twelve",
+                "one",
+                "two",
+                "three",
+                "four",
+                "five",
+                "six",
+                "seven",
+                "eight",
+                "nine",
+                "ten",
+                "eleven",
+            ]
+            word = words[hour]
+            is_live = bool(self._attributes.get("popularity_is_live"))
+            suffix = "" if is_live else "-outline"
+            return f"mdi:clock-time-{word}{suffix}"
+        except Exception:  # pragma: no cover - fallback for safety
+            return "mdi:clock-outline"
 
     @property
     def suggested_object_id(self) -> str | None:
