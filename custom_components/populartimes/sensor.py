@@ -3,11 +3,7 @@ from datetime import datetime, timedelta
 import hashlib
 import logging
 
-from homeassistant.components.sensor import (
-    PLATFORM_SCHEMA,
-    SensorEntity,
-    SensorStateClass,
-)
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity, SensorStateClass
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
 import homeassistant.helpers.config_validation as cv
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
@@ -27,10 +23,46 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 SCAN_INTERVAL = timedelta(minutes=10)
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up the Popular Times sensor platform."""
+    """Migrate YAML-defined sensor to a config entry and stop setting up from YAML."""
+    from .const import DOMAIN  # Local import to avoid HA import errors in editors
+
     name = config[CONF_NAME]
     address = config[CONF_ADDRESS]
-    add_entities([PopularTimesSensor(name, address)], True)
+
+    async def _migrate_yaml_to_entry() -> None:
+        # Avoid duplicate entries if already configured
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get(CONF_ADDRESS) == address:
+                return
+
+        await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": "import"},
+            data={CONF_NAME: name, CONF_ADDRESS: address},
+        )
+
+        # Notify user that YAML can be removed
+        await hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": "Popular Times migrated",
+                "message": (
+                    f"Imported '{name}' from YAML to UI config. "
+                    "You can now remove it from configuration.yaml."
+                ),
+            },
+            blocking=False,
+        )
+
+    hass.async_create_task(_migrate_yaml_to_entry())
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up Popular Times sensor(s) from a config entry."""
+    name = entry.data[CONF_NAME]
+    address = entry.data[CONF_ADDRESS]
+    async_add_entities([PopularTimesSensor(name, address)], True)
 
 
 class PopularTimesSensor(SensorEntity):

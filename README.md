@@ -1,4 +1,4 @@
-# Updated with AI - not fit for Human Consumption
+# Updated with AI - Not fit for human consumption
 
 # hass-populartimes
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)

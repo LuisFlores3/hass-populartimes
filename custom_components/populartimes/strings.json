@@ -1,0 +1,17 @@
+{
+  "title": "Popular Times",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Popular Times sensor",
+        "data": {
+          "name": "Name",
+          "address": "Address"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This Popular Times address is already configured"
+    }
+  }
+}
