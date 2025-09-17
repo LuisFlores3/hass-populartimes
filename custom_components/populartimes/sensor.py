@@ -41,10 +41,17 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     # Avoid duplicate entries if already configured (compare normalized address)
     for entry in hass.config_entries.async_entries(DOMAIN):
         if entry.data.get(CONF_ADDRESS, "").strip().lower() == norm_addr:
-            _LOGGER.debug("YAML import skipped; entry already exists for address '%s'", address)
+            _LOGGER.info(
+                "YAML configuration ignored; config entry already exists for address '%s'",
+                address,
+            )
             return
 
-    _LOGGER.debug("Starting YAML -> UI import for Popular Times: name='%s', address='%s'", name, address)
+    _LOGGER.warning(
+        "YAML configuration for Popular Times is deprecated and will be imported to UI: name='%s', address='%s'",
+        name,
+        address,
+    )
 
     await hass.config_entries.flow.async_init(
         DOMAIN,
@@ -52,19 +59,24 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         data={CONF_NAME: name, CONF_ADDRESS: address},
     )
 
-    # Notify user that YAML can be removed
-    await hass.services.async_call(
-        "persistent_notification",
-        "create",
-        {
-            "title": "Popular Times migrated",
-            "message": (
-                f"Imported '{name}' from YAML to UI config. "
-                "You can now remove it from configuration.yaml."
-            ),
-        },
-        blocking=False,
-    )
+    # Notify user (once per startup) that YAML can be removed
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if not domain_data.get("yaml_migration_notified"):
+        await hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": "Popular Times: YAML migrated",
+                "message": (
+                    "Popular Times entries were imported from YAML to the UI. "
+                    "You can now remove them from configuration.yaml."
+                ),
+                # Use a fixed ID so repeated calls update the same notification
+                "notification_id": "populartimes_yaml_migration",
+            },
+            blocking=False,
+        )
+        domain_data["yaml_migration_notified"] = True
 
 
 async def async_setup_entry(hass, entry, async_add_entities):

@@ -44,10 +44,10 @@ sensor:
 Address tips:
 - Enter the standard postal address. You do not need to include the place name; the integration sends "Name, Address" to Google behind the scenes for better matching.
 
-## YAML → UI migration
-- If you already configured this integration via YAML, it will be imported automatically into the UI on the next restart.
-- A persistent notification will be shown indicating YAML can be removed.
-- After import, the UI config becomes the source of truth; the YAML can be removed from `configuration.yaml`.
+## YAML → UI migration (YAML deprecated)
+- YAML configuration is deprecated and no longer used for setup.
+- If YAML is present, it will be imported into a UI config entry on the next restart, and then ignored.
+- A persistent notification will indicate that YAML can be removed from `configuration.yaml`.
 
 ## Edit after setup
 - To change the sensor Name or Address later, open the Popular Times integration and click the gear icon for the entry, then adjust the fields and save.
