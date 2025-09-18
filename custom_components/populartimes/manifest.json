@@ -6,7 +6,7 @@
   "dependencies": [],
   "codeowners": ["@freakshock88", "@LuisFlores3"],
   "requirements": ["LivePopularTimes==1.3"],
-  "version": "0.27",
+  "version": "0.28",
   "config_flow": true,
   "icon": "mdi:clock-outline"
 }
