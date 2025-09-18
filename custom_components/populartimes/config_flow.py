@@ -10,7 +10,13 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
 from homeassistant.core import callback
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    OPTION_UPDATE_INTERVAL_MINUTES,
+    OPTION_MAX_ATTEMPTS,
+    OPTION_BACKOFF_INITIAL_SECONDS,
+    OPTION_BACKOFF_MAX_SECONDS,
+)
 
 
 def _addr_unique_id(address: str) -> str:
@@ -18,8 +24,10 @@ def _addr_unique_id(address: str) -> str:
     return f"addr_{digest}"
 
 
-class PopularTimesConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class PopularTimesConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for Popular Times."""
+
+    DOMAIN = DOMAIN
 
     VERSION = 1
     MINOR_VERSION = 0
@@ -110,20 +118,41 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
         defaults = {
             CONF_NAME: cur_opts.get(CONF_NAME, data.get(CONF_NAME, "Popular Times")),
             CONF_ADDRESS: cur_opts.get(CONF_ADDRESS, data.get(CONF_ADDRESS, "")),
+            OPTION_UPDATE_INTERVAL_MINUTES: int(cur_opts.get(OPTION_UPDATE_INTERVAL_MINUTES, 10)),
+            OPTION_MAX_ATTEMPTS: int(cur_opts.get(OPTION_MAX_ATTEMPTS, 4)),
+            OPTION_BACKOFF_INITIAL_SECONDS: float(cur_opts.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0)),
+            OPTION_BACKOFF_MAX_SECONDS: float(cur_opts.get(OPTION_BACKOFF_MAX_SECONDS, 8.0)),
         }
 
         if user_input is not None:
             # Save edits as options; the integration will read options first.
             # Avoid updating entry data/title here to prevent reload races during the flow.
-            return self.async_create_entry(title="Options", data={
-                CONF_NAME: user_input[CONF_NAME],
-                CONF_ADDRESS: user_input[CONF_ADDRESS],
-            })
+            # Normalize & clamp
+            interval = max(1, min(120, int(user_input[OPTION_UPDATE_INTERVAL_MINUTES])))
+            attempts = max(1, min(8, int(user_input[OPTION_MAX_ATTEMPTS])))
+            backoff_initial = max(0.1, min(30.0, float(user_input[OPTION_BACKOFF_INITIAL_SECONDS])))
+            backoff_max = max(backoff_initial, min(120.0, float(user_input[OPTION_BACKOFF_MAX_SECONDS])))
+
+            return self.async_create_entry(
+                title="Options",
+                data={
+                    CONF_NAME: user_input[CONF_NAME],
+                    CONF_ADDRESS: user_input[CONF_ADDRESS],
+                    OPTION_UPDATE_INTERVAL_MINUTES: interval,
+                    OPTION_MAX_ATTEMPTS: attempts,
+                    OPTION_BACKOFF_INITIAL_SECONDS: backoff_initial,
+                    OPTION_BACKOFF_MAX_SECONDS: backoff_max,
+                },
+            )
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=defaults[CONF_NAME]): str,
                 vol.Required(CONF_ADDRESS, default=defaults[CONF_ADDRESS]): str,
+                vol.Required(OPTION_UPDATE_INTERVAL_MINUTES, default=defaults[OPTION_UPDATE_INTERVAL_MINUTES]): int,
+                vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): int,
+                vol.Required(OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]): float,
+                vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): float,
             }
         )
 

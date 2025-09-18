@@ -12,7 +12,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import (
+	DOMAIN,
+	OPTION_UPDATE_INTERVAL_MINUTES,
+	OPTION_MAX_ATTEMPTS,
+	OPTION_BACKOFF_INITIAL_SECONDS,
+	OPTION_BACKOFF_MAX_SECONDS,
+)
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 
@@ -48,10 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 		# Import lazily to avoid editor warnings and ensure module load at runtime
 		import livepopulartimes  # type: ignore
 
-		# Retry with exponential backoff and jitter for transient errors
-		max_attempts = 4
-		delay = 1.0  # seconds
-		max_delay = 8.0
+	# Retry with exponential backoff and jitter for transient errors (tunable)
+	max_attempts = int(entry.options.get(OPTION_MAX_ATTEMPTS, 4))
+	delay = float(entry.options.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0))
+	max_delay = float(entry.options.get(OPTION_BACKOFF_MAX_SECONDS, 8.0))
 		last_exc: Exception | None = None
 		result = None
 		for attempt in range(1, max_attempts + 1):
@@ -148,12 +154,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 		return {"state": popularity, "attributes": attributes}
 
+	# Polling interval (tunable via options)
+	interval_min = int(entry.options.get(OPTION_UPDATE_INTERVAL_MINUTES, 10))
+	interval_min = max(1, min(120, interval_min))
+
 	coordinator = DataUpdateCoordinator(
 		hass,
 		_LOGGER,
 		name=f"PopularTimes {entry.title}",
 		update_method=_async_update_data,
-		update_interval=timedelta(minutes=10),
+		update_interval=timedelta(minutes=interval_min),
 	)
 
 	# First refresh before setting up entities
