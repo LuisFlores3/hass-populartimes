@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta, datetime
+import asyncio
+import random
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -46,17 +48,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 		# Import lazily to avoid editor warnings and ensure module load at runtime
 		import livepopulartimes  # type: ignore
 
-		try:
-			result = await hass.async_add_executor_job(
-				livepopulartimes.get_populartimes_by_address, query
-			)
-		except (ConnectError, HTTPError, Timeout) as req_err:
-			raise UpdateFailed(f"Network error fetching '{address}': {req_err}") from req_err
-		except Exception as ex:  # noqa: BLE001
-			raise UpdateFailed(f"Unexpected error fetching '{address}': {ex}") from ex
+		# Retry with exponential backoff and jitter for transient errors
+		max_attempts = 4
+		delay = 1.0  # seconds
+		max_delay = 8.0
+		last_exc: Exception | None = None
+		result = None
+		for attempt in range(1, max_attempts + 1):
+			try:
+				result = await hass.async_add_executor_job(
+					livepopulartimes.get_populartimes_by_address, query
+				)
+				# Treat empty result as retryable once or twice; Google can be flaky
+				if result:
+					break
+				raise UpdateFailed(f"No data returned for '{address}'")
+			except Timeout as req_err:
+				last_exc = req_err
+				retryable = True
+			except ConnectError as req_err:
+				last_exc = req_err
+				retryable = True
+			except HTTPError as req_err:
+				last_exc = req_err
+				status = getattr(getattr(req_err, "response", None), "status_code", None)
+				retryable = status in (429, 502, 503, 504) or (status is not None and status >= 500)
+				if not retryable:
+					raise UpdateFailed(
+						f"HTTP error fetching '{address}' (status {status}): {req_err}"
+					) from req_err
+			except UpdateFailed as ex:  # raised above for empty result
+				last_exc = ex
+				retryable = attempt < max_attempts  # try a couple of times
+			except Exception as ex:  # noqa: BLE001
+				# Non-network unexpected errors are not retryable
+				raise UpdateFailed(f"Unexpected error fetching '{address}': {ex}") from ex
 
-		if not result:
-			raise UpdateFailed(f"No data returned for '{address}'")
+			if attempt < max_attempts and retryable:
+				# Exponential backoff with jitter
+				sleep_for = min(delay, max_delay)
+				jitter = random.uniform(0, 0.4 * sleep_for)
+				total_sleep = sleep_for + jitter
+				_LOGGER.debug(
+					"Retry %s/%s for %s in %.1fs (reason: %s)",
+					attempt,
+					max_attempts,
+					address,
+					total_sleep,
+					last_exc,
+				)
+				await asyncio.sleep(total_sleep)
+				delay = min(delay * 2, max_delay)
+				continue
+			# Give up
+			raise UpdateFailed(f"Network error fetching '{address}': {last_exc}") from last_exc
 
 		popularity = result.get("current_popularity")
 		attributes: dict[str, object] = {
