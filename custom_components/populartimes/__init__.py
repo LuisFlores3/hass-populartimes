@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import timedelta, datetime
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
-from homeassistant.const import CONF_NAME
+from homeassistant.const import CONF_NAME, CONF_ADDRESS
+from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
@@ -17,12 +24,105 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 	# Ensure domain data storage
 	domain_data = hass.data.setdefault(DOMAIN, {})
 
+	# Build a coordinator per entry to centralize polling and retries
+	async def _async_update_data() -> dict:
+		# Read current values (options preferred)
+		name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, ""))
+		address = entry.options.get(CONF_ADDRESS, entry.data.get(CONF_ADDRESS, ""))
+
+		# Build query using both name and address (avoid duplicating name if already present)
+		name_s = (name or "").strip()
+		addr_s = (address or "").strip()
+		if name_s:
+			n = name_s.lower()
+			a = addr_s.lower()
+			if a.startswith(n) or a.startswith(f"{n},") or a.startswith(f"{n} "):
+				query = addr_s
+			else:
+				query = f"{name_s}, {addr_s}" if addr_s else name_s
+		else:
+			query = addr_s
+
+		# Import lazily to avoid editor warnings and ensure module load at runtime
+		import livepopulartimes  # type: ignore
+
+		try:
+			result = await hass.async_add_executor_job(
+				livepopulartimes.get_populartimes_by_address, query
+			)
+		except (ConnectError, HTTPError, Timeout) as req_err:
+			raise UpdateFailed(f"Network error fetching '{address}': {req_err}") from req_err
+		except Exception as ex:  # noqa: BLE001
+			raise UpdateFailed(f"Unexpected error fetching '{address}': {ex}") from ex
+
+		if not result:
+			raise UpdateFailed(f"No data returned for '{address}'")
+
+		popularity = result.get("current_popularity")
+		attributes: dict[str, object] = {
+			"maps_name": result.get("name"),
+			"address": result.get("address"),
+			"popularity_is_live": None,
+			"popularity_monday": None,
+			"popularity_tuesday": None,
+			"popularity_wednesday": None,
+			"popularity_thursday": None,
+			"popularity_friday": None,
+			"popularity_saturday": None,
+			"popularity_sunday": None,
+		}
+
+		try:
+			pop = result.get("populartimes", [])
+			attributes["popularity_monday"] = pop[0]["data"] if len(pop) > 0 else None
+			attributes["popularity_tuesday"] = pop[1]["data"] if len(pop) > 1 else None
+			attributes["popularity_wednesday"] = pop[2]["data"] if len(pop) > 2 else None
+			attributes["popularity_thursday"] = pop[3]["data"] if len(pop) > 3 else None
+			attributes["popularity_friday"] = pop[4]["data"] if len(pop) > 4 else None
+			attributes["popularity_saturday"] = pop[5]["data"] if len(pop) > 5 else None
+			attributes["popularity_sunday"] = pop[6]["data"] if len(pop) > 6 else None
+		except (KeyError, IndexError, TypeError):
+			# Keep attributes None if malformed
+			pass
+
+		if popularity is None:
+			# Fallback to historical based on current time
+			dt = datetime.now()
+			weekday_index = dt.weekday()
+			hour_index = dt.hour
+			try:
+				popularity = result["populartimes"][weekday_index]["data"][hour_index]
+				attributes["popularity_is_live"] = False
+			except (KeyError, IndexError, TypeError) as ex:
+				raise UpdateFailed("Historical popularity not available for fallback") from ex
+		else:
+			attributes["popularity_is_live"] = True
+
+		if isinstance(popularity, (int, float)):
+			popularity = max(0, min(100, int(popularity)))
+
+		return {"state": popularity, "attributes": attributes}
+
+	coordinator = DataUpdateCoordinator(
+		hass,
+		_LOGGER,
+		name=f"PopularTimes {entry.title}",
+		update_method=_async_update_data,
+		update_interval=timedelta(minutes=10),
+	)
+
+	# First refresh before setting up entities
+	await coordinator.async_config_entry_first_refresh()
+
 	# Keep the entry title in sync with the configured Name (options preferred)
 	desired_title = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, entry.title))
 	if desired_title and entry.title != desired_title:
 		# Avoid triggering an extra reload cycle when we update the title
 		domain_data["skip_next_reload"] = True
 		hass.config_entries.async_update_entry(entry, title=desired_title)
+
+	# Store coordinator for platform setup
+	domain_data[entry.entry_id] = {"coordinator": coordinator, **domain_data.get(entry.entry_id, {})}
 
 	await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -33,7 +133,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 	"""Unload a config entry."""
-	return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+	ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+	# Cleanup coordinator
+	if ok:
+		domain_data = hass.data.setdefault(DOMAIN, {})
+		domain_data.pop(entry.entry_id, None)
+	return ok
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

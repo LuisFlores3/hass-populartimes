@@ -11,6 +11,7 @@ from requests.exceptions import ConnectionError as ConnectError, HTTPError, Time
 import voluptuous as vol
 from homeassistant.util import slugify
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 import livepopulartimes
 
@@ -117,14 +118,19 @@ async def async_setup_entry(hass, entry, async_add_entities):
         if ent.config_entry_id == entry.entry_id and ent.platform == platform and ent.unique_id != stable_unique_id:
             registry.async_remove(ent.entity_id)
 
-    entity = PopularTimesSensor(name, address, stable_unique_id)
+    # Wire up coordinator from domain data (created in __init__.py)
+    from .const import DOMAIN  # local import
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+
+    entity = PopularTimesSensor(coordinator, name, address, stable_unique_id)
     async_add_entities([entity], True)
 
 
-class PopularTimesSensor(SensorEntity):
+class PopularTimesSensor(CoordinatorEntity, SensorEntity):
 
-    def __init__(self, name: str, address: str, unique_id: str) -> None:
+    def __init__(self, coordinator, name: str, address: str, unique_id: str) -> None:
         """Initialize the sensor."""
+        super().__init__(coordinator)
         self._name = name
         self._address = address
         self._unique_id = unique_id
@@ -150,6 +156,9 @@ class PopularTimesSensor(SensorEntity):
     @property
     def native_value(self):
         """Return the current popularity as the sensor value."""
+        data = getattr(self.coordinator, "data", None) if hasattr(self, "coordinator") else None
+        if isinstance(data, dict):
+            return data.get("state")
         return self._state
 
     # Back-compat for older HA versions that still access state
@@ -168,6 +177,12 @@ class PopularTimesSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        data = getattr(self.coordinator, "data", None) if hasattr(self, "coordinator") else None
+        if isinstance(data, dict):
+            attrs = data.get("attributes") or {}
+            # Mirror internal attributes for backward compatibility during transition
+            self._attributes.update(attrs)
+            return self._attributes
         return self._attributes
 
     @property
@@ -224,77 +239,4 @@ class PopularTimesSensor(SensorEntity):
             self._name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, self._name))
             self._address = entry.options.get(CONF_ADDRESS, entry.data.get(CONF_ADDRESS, self._address))
 
-    async def async_update(self):
-        """Asynchronously get the latest data from Google Popular Times off the event loop."""
-        try:
-            # Build query using friendly name + address (avoid double-prefixing)
-            name = (self._name or "").strip()
-            address = (self._address or "").strip()
-            if name:
-                n = name.lower()
-                a = address.lower()
-                if a.startswith(n) or a.startswith(f"{n},") or a.startswith(f"{n} "):
-                    query = address
-                else:
-                    query = f"{name}, {address}" if address else name
-            else:
-                query = address
-
-            # Run the blocking network call in an executor to avoid blocking the event loop
-            result = await self.hass.async_add_executor_job(
-                livepopulartimes.get_populartimes_by_address, query
-            )
-
-            if not result:
-                _LOGGER.warning("No data returned for address '%s'", self._address)
-                return
-
-            popularity = result.get("current_popularity")
-
-            # Attributes: core metadata
-            self._attributes["address"] = result.get("address")
-            self._attributes["maps_name"] = result.get("name")
-
-            # Historical data by weekday
-            try:
-                pop = result.get("populartimes", [])
-                self._attributes["popularity_monday"] = pop[0]["data"] if len(pop) > 0 else None
-                self._attributes["popularity_tuesday"] = pop[1]["data"] if len(pop) > 1 else None
-                self._attributes["popularity_wednesday"] = pop[2]["data"] if len(pop) > 2 else None
-                self._attributes["popularity_thursday"] = pop[3]["data"] if len(pop) > 3 else None
-                self._attributes["popularity_friday"] = pop[4]["data"] if len(pop) > 4 else None
-                self._attributes["popularity_saturday"] = pop[5]["data"] if len(pop) > 5 else None
-                self._attributes["popularity_sunday"] = pop[6]["data"] if len(pop) > 6 else None
-            except (KeyError, IndexError, TypeError):
-                _LOGGER.debug("Historical popularity data missing or malformed for '%s'", self._address)
-
-            # Fallback to historical if live is unavailable
-            if popularity is None:
-                dt = datetime.now()
-                weekday_index = dt.weekday()
-                hour_index = dt.hour
-                try:
-                    historical_data_for_hour = result["populartimes"][weekday_index]["data"][hour_index]
-                    popularity = historical_data_for_hour
-                    self._attributes["popularity_is_live"] = False
-                    _LOGGER.info(
-                        "Using historical popularity (no live data) for '%s'", self._address
-                    )
-                except (KeyError, IndexError, TypeError):
-                    _LOGGER.warning(
-                        "Historical popularity not available to fallback for '%s'", self._address
-                    )
-                    return
-            else:
-                self._attributes["popularity_is_live"] = True
-
-            # Clamp value range to 0..100 just in case
-            if isinstance(popularity, (int, float)):
-                popularity = max(0, min(100, int(popularity)))
-
-            self._state = popularity
-
-        except (ConnectError, HTTPError, Timeout) as req_err:
-            _LOGGER.warning("Network error while fetching popularity for '%s': %s", self._address, req_err)
-        except Exception:  # noqa: BLE001 - log unexpected exceptions with stack
-            _LOGGER.exception("Unexpected error while updating Popular Times for '%s'", self._address)
+    # Updates are handled by the DataUpdateCoordinator; no per-entity async_update needed
