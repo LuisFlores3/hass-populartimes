@@ -113,6 +113,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 		attributes: dict[str, object] = {
 			"maps_name": result.get("name"),
 			"address": result.get("address"),
+			"latitude": None,
+			"longitude": None,
 			"popularity_is_live": None,
 			"popularity_monday": None,
 			"popularity_tuesday": None,
@@ -122,6 +124,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 			"popularity_saturday": None,
 			"popularity_sunday": None,
 		}
+
+		# Try to populate latitude/longitude from common result shapes
+		try:
+			lat = None
+			lon = None
+			coords = (
+				result.get("coordinates")
+				or result.get("coordinate")
+				or result.get("location")
+				or result.get("coords")
+			)
+			if isinstance(coords, dict):
+				lat = coords.get("lat") or coords.get("latitude")
+				lon = coords.get("lng") or coords.get("lon") or coords.get("longitude")
+			elif isinstance(coords, (list, tuple)) and len(coords) >= 2:
+				lat, lon = coords[0], coords[1]
+			# Top-level fallbacks
+			lat = lat if lat is not None else result.get("lat") or result.get("latitude")
+			lon = lon if lon is not None else result.get("lng") or result.get("lon") or result.get("longitude")
+			if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+				attributes["latitude"] = float(lat)
+				attributes["longitude"] = float(lon)
+		except Exception:  # pragma: no cover - best-effort extraction
+			pass
 
 		try:
 			pop = result.get("populartimes", [])

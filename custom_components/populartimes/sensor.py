@@ -139,6 +139,8 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
         self._attributes: dict[str, object] = {
             "maps_name": None,
             "address": None,
+            "latitude": None,
+            "longitude": None,
             "popularity_is_live": None,
             "popularity_monday": None,
             "popularity_tuesday": None,
