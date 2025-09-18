@@ -54,10 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 		# Import lazily to avoid editor warnings and ensure module load at runtime
 		import livepopulartimes  # type: ignore
 
-	# Retry with exponential backoff and jitter for transient errors (tunable)
-	max_attempts = int(entry.options.get(OPTION_MAX_ATTEMPTS, 4))
-	delay = float(entry.options.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0))
-	max_delay = float(entry.options.get(OPTION_BACKOFF_MAX_SECONDS, 8.0))
+		# Retry with exponential backoff and jitter for transient errors (tunable)
+		max_attempts = int(entry.options.get(OPTION_MAX_ATTEMPTS, 4))
+		delay = float(entry.options.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0))
+		max_delay = float(entry.options.get(OPTION_BACKOFF_MAX_SECONDS, 8.0))
 		last_exc: Exception | None = None
 		result = None
 		for attempt in range(1, max_attempts + 1):
