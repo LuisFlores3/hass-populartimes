@@ -224,13 +224,10 @@ class PopularTimesSensor(SensorEntity):
             self._name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, self._name))
             self._address = entry.options.get(CONF_ADDRESS, entry.data.get(CONF_ADDRESS, self._address))
 
-    def update(self):
-        """Get the latest data from Google Popular Times (via livepopulartimes)."""
+    async def async_update(self):
+        """Asynchronously get the latest data from Google Popular Times off the event loop."""
         try:
-            # Build a query using both the friendly name and the postal address to improve
-            # venue matching without requiring users to include the name in the address.
-            # If the address already contains the name (common in older YAML setups),
-            # don't prefix it again to avoid duplication like "Name, Name, 123 Main...".
+            # Build query using friendly name + address (avoid double-prefixing)
             name = (self._name or "").strip()
             address = (self._address or "").strip()
             if name:
@@ -242,7 +239,12 @@ class PopularTimesSensor(SensorEntity):
                     query = f"{name}, {address}" if address else name
             else:
                 query = address
-            result = livepopulartimes.get_populartimes_by_address(query)
+
+            # Run the blocking network call in an executor to avoid blocking the event loop
+            result = await self.hass.async_add_executor_job(
+                livepopulartimes.get_populartimes_by_address, query
+            )
+
             if not result:
                 _LOGGER.warning("No data returned for address '%s'", self._address)
                 return
