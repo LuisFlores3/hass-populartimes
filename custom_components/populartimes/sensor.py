@@ -155,10 +155,7 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return the current popularity as the sensor value."""
-        data = getattr(self.coordinator, "data", None) if hasattr(self, "coordinator") else None
-        if isinstance(data, dict):
-            return data.get("state")
+        """Return the current popularity as the sensor value (cached)."""
         return self._state
 
     # Back-compat for older HA versions that still access state
@@ -177,12 +174,6 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
-        data = getattr(self.coordinator, "data", None) if hasattr(self, "coordinator") else None
-        if isinstance(data, dict):
-            attrs = data.get("attributes") or {}
-            # Mirror internal attributes for backward compatibility during transition
-            self._attributes.update(attrs)
-            return self._attributes
         return self._attributes
 
     @property
@@ -238,5 +229,31 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
             # Options override data if provided
             self._name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, self._name))
             self._address = entry.options.get(CONF_ADDRESS, entry.data.get(CONF_ADDRESS, self._address))
+        # Initialize from coordinator if data available
+        data = getattr(self.coordinator, "data", None) if hasattr(self, "coordinator") else None
+        if isinstance(data, dict):
+            state = data.get("state")
+            if isinstance(state, (int, float)):
+                self._state = int(state)
+            attrs = data.get("attributes") or {}
+            self._attributes.update(attrs)
+
+    @property
+    def available(self) -> bool:
+        """Return True if last coordinator update was successful."""
+        if hasattr(self, "coordinator") and self.coordinator is not None:
+            return bool(getattr(self.coordinator, "last_update_success", True))
+        return True
+
+    def _handle_coordinator_update(self) -> None:
+        """Update cached state/attributes from coordinator and write state."""
+        data = getattr(self.coordinator, "data", None)
+        if isinstance(data, dict):
+            state = data.get("state")
+            if isinstance(state, (int, float)):
+                self._state = int(state)
+            attrs = data.get("attributes") or {}
+            self._attributes.update(attrs)
+        self.async_write_ha_state()
 
     # Updates are handled by the DataUpdateCoordinator; no per-entity async_update needed
