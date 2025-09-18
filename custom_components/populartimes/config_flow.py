@@ -24,10 +24,8 @@ def _addr_unique_id(address: str) -> str:
     return f"addr_{digest}"
 
 
-class PopularTimesConfigFlow(config_entries.ConfigFlow):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Popular Times."""
-
-    DOMAIN = DOMAIN
 
     VERSION = 1
     MINOR_VERSION = 0
