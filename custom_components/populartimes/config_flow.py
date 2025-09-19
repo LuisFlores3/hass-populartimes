@@ -135,7 +135,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
             OPTION_ICON_MDI: cur_opts.get(OPTION_ICON_MDI, "mdi:clock-outline"),
         }
 
-        # Basic options: save on submit (advanced defaults are applied)
+        # Basic options: if user checks Open advanced settings, advance to advanced step;
+        # otherwise save immediately (advanced defaults are applied).
         if user_input is not None:
             try:
                 # Normalize icon selector value
@@ -149,6 +150,16 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                     return str(raw_val)
 
                 icon_val = _normalize_icon(user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]))
+
+                if user_input.get("open_advanced"):
+                    # stash and go to advanced step
+                    self._basic = {
+                        CONF_NAME: user_input[CONF_NAME],
+                        CONF_ADDRESS: user_input[CONF_ADDRESS],
+                        OPTION_ICON_MDI: icon_val or defaults[OPTION_ICON_MDI],
+                        OPTION_ICON_MODE: ICON_MODE_CUSTOM if icon_val else ICON_MODE_DYNAMIC,
+                    }
+                    return await self.async_step_advanced()
 
                 new_opts = {
                     CONF_NAME: user_input[CONF_NAME],
@@ -171,7 +182,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_ADDRESS, default=defaults[CONF_ADDRESS]): str,
                 # HA's icon selector for real-time lookup and pick
                 vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): selector.IconSelector(),
-                # (advanced controls removed from basic UI to avoid toggle quirks)
+                # Offer an explicit open-advanced toggle (acts like an "Advanced..." button when checked)
+                vol.Optional("open_advanced", default=False): selector.BooleanSelector(),
             }
         )
 
