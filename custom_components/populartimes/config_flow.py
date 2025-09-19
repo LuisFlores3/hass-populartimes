@@ -28,7 +28,7 @@ def _addr_unique_id(address: str) -> str:
     return f"addr_{digest}"
 
 
-class ConfigFlow(config_entries.ConfigFlow):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Popular Times."""
 
     VERSION = 1
@@ -55,10 +55,7 @@ class ConfigFlow(config_entries.ConfigFlow):
             ),
         )
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        return PopularTimesOptionsFlowHandler(config_entry)
+    # Options flow is provided via a module-level async_get_options_flow below
 
     async def async_step_import(self, user_input: dict[str, Any]) -> config_entries.ConfigFlowResult:
         """Handle import from YAML (sensor platform)."""
@@ -169,3 +166,9 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
         return self.async_show_form(step_id="init", data_schema=schema)
+
+
+# Expose options flow factory at module level (required by Home Assistant)
+@callback
+def async_get_options_flow(config_entry):
+    return PopularTimesOptionsFlowHandler(config_entry)
