@@ -16,6 +16,10 @@ from .const import (
     OPTION_MAX_ATTEMPTS,
     OPTION_BACKOFF_INITIAL_SECONDS,
     OPTION_BACKOFF_MAX_SECONDS,
+    OPTION_ICON_MODE,
+    OPTION_ICON_MDI,
+    ICON_MODE_DYNAMIC,
+    ICON_MODE_CUSTOM,
 )
 
 
@@ -24,7 +28,7 @@ def _addr_unique_id(address: str) -> str:
     return f"addr_{digest}"
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for Popular Times."""
 
     VERSION = 1
@@ -120,6 +124,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
             OPTION_MAX_ATTEMPTS: int(cur_opts.get(OPTION_MAX_ATTEMPTS, 4)),
             OPTION_BACKOFF_INITIAL_SECONDS: float(cur_opts.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0)),
             OPTION_BACKOFF_MAX_SECONDS: float(cur_opts.get(OPTION_BACKOFF_MAX_SECONDS, 8.0)),
+            OPTION_ICON_MODE: cur_opts.get(OPTION_ICON_MODE, ICON_MODE_DYNAMIC),
+            OPTION_ICON_MDI: cur_opts.get(OPTION_ICON_MDI, "mdi:clock-outline"),
         }
 
         if user_input is not None:
@@ -130,6 +136,10 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
             attempts = max(1, min(8, int(user_input[OPTION_MAX_ATTEMPTS])))
             backoff_initial = max(0.1, min(30.0, float(user_input[OPTION_BACKOFF_INITIAL_SECONDS])))
             backoff_max = max(backoff_initial, min(120.0, float(user_input[OPTION_BACKOFF_MAX_SECONDS])))
+            icon_mode = user_input.get(OPTION_ICON_MODE, ICON_MODE_DYNAMIC)
+            if icon_mode not in (ICON_MODE_DYNAMIC, ICON_MODE_CUSTOM):
+                icon_mode = ICON_MODE_DYNAMIC
+            icon_mdi = str(user_input.get(OPTION_ICON_MDI, "mdi:clock-outline")).strip() or "mdi:clock-outline"
 
             return self.async_create_entry(
                 title="Options",
@@ -140,6 +150,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                     OPTION_MAX_ATTEMPTS: attempts,
                     OPTION_BACKOFF_INITIAL_SECONDS: backoff_initial,
                     OPTION_BACKOFF_MAX_SECONDS: backoff_max,
+                    OPTION_ICON_MODE: icon_mode,
+                    OPTION_ICON_MDI: icon_mdi,
                 },
             )
 
@@ -151,6 +163,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): int,
                 vol.Required(OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]): float,
                 vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): float,
+                vol.Required(OPTION_ICON_MODE, default=defaults[OPTION_ICON_MODE]): vol.In([ICON_MODE_DYNAMIC, ICON_MODE_CUSTOM]),
+                vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): str,
             }
         )
 

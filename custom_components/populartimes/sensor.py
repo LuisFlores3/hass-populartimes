@@ -185,12 +185,22 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def icon(self) -> str:
-        """Return a clock icon indicating the current hour.
+        """Return the sensor icon based on options.
 
-        Uses a filled clock when live popularity is available, and an outline clock
-        when falling back to historical data. The hour hand reflects the local hour.
+        - If icon_mode=custom and icon_mdi is set, use that.
+        - Otherwise, use the dynamic hour-based clock (filled when live, outline when historical).
         """
         try:
+            entry = self.platform.config_entry  # type: ignore[assignment]
+            if entry is not None:
+                from .const import OPTION_ICON_MODE, OPTION_ICON_MDI, ICON_MODE_CUSTOM
+                icon_mode = entry.options.get(OPTION_ICON_MODE)
+                if icon_mode == ICON_MODE_CUSTOM:
+                    custom_icon = str(entry.options.get(OPTION_ICON_MDI) or "").strip()
+                    if custom_icon:
+                        return custom_icon
+
+            # Fallback to dynamic clock
             hour = datetime.now().hour % 12
             words = [
                 "twelve",
