@@ -134,29 +134,46 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
 
         # Two-step flow: basic (name/address/icon) and optional advanced
         if user_input is not None:
-            # If user requested advanced, stash the basic fields and show advanced step
-            if user_input.get("Show Advanced Settings"):
-                # store partial data on the flow instance
-                self._basic = {
+            try:
+                # Helper to normalize the IconSelector value (it can be a dict in newer frontends)
+                def _normalize_icon(raw_val: Any) -> str | None:
+                    if raw_val is None:
+                        return None
+                    if isinstance(raw_val, str):
+                        return raw_val or None
+                    if isinstance(raw_val, dict):
+                        # Icon selector may return {'icon': 'mdi:clock-outline'} or {'value': 'mdi:...'}
+                        return raw_val.get("icon") or raw_val.get("value") or None
+                    return str(raw_val)
+
+                icon_val = _normalize_icon(user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]))
+
+                # If user requested advanced, stash the basic fields and show advanced step
+                if user_input.get("Show Advanced Settings"):
+                    # store partial data on the flow instance
+                    self._basic = {
+                        CONF_NAME: user_input[CONF_NAME],
+                        CONF_ADDRESS: user_input[CONF_ADDRESS],
+                        OPTION_ICON_MDI: icon_val or defaults[OPTION_ICON_MDI],
+                        OPTION_ICON_MODE: defaults[OPTION_ICON_MODE],
+                    }
+                    return await self.async_step_advanced()
+
+                # Otherwise, persist options immediately (basic-only)
+                new_opts = {
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_ADDRESS: user_input[CONF_ADDRESS],
-                    OPTION_ICON_MDI: user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]),
-                    OPTION_ICON_MODE: defaults[OPTION_ICON_MODE],
+                    OPTION_ICON_MDI: icon_val or defaults[OPTION_ICON_MDI],
+                    OPTION_ICON_MODE: ICON_MODE_CUSTOM if icon_val else ICON_MODE_DYNAMIC,
+                    OPTION_UPDATE_INTERVAL_MINUTES: defaults[OPTION_UPDATE_INTERVAL_MINUTES],
+                    OPTION_MAX_ATTEMPTS: defaults[OPTION_MAX_ATTEMPTS],
+                    OPTION_BACKOFF_INITIAL_SECONDS: defaults[OPTION_BACKOFF_INITIAL_SECONDS],
+                    OPTION_BACKOFF_MAX_SECONDS: defaults[OPTION_BACKOFF_MAX_SECONDS],
                 }
-                return await self.async_step_advanced()
-
-            # Otherwise, persist options immediately (basic-only)
-            new_opts = {
-                CONF_NAME: user_input[CONF_NAME],
-                CONF_ADDRESS: user_input[CONF_ADDRESS],
-                OPTION_ICON_MDI: user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]),
-                OPTION_ICON_MODE: ICON_MODE_CUSTOM if user_input.get(OPTION_ICON_MDI) else ICON_MODE_DYNAMIC,
-                OPTION_UPDATE_INTERVAL_MINUTES: defaults[OPTION_UPDATE_INTERVAL_MINUTES],
-                OPTION_MAX_ATTEMPTS: defaults[OPTION_MAX_ATTEMPTS],
-                OPTION_BACKOFF_INITIAL_SECONDS: defaults[OPTION_BACKOFF_INITIAL_SECONDS],
-                OPTION_BACKOFF_MAX_SECONDS: defaults[OPTION_BACKOFF_MAX_SECONDS],
-            }
-            return self.async_create_entry(title="Options", data=new_opts)
+                return self.async_create_entry(title="Options", data=new_opts)
+            except Exception:  # broad except to ensure we return a form error, not a crash
+                # Show a friendly error in the flow and let HA log the exception
+                return self.async_show_form(step_id="init", errors={"base": "unknown"})
 
         schema = vol.Schema(
             {
@@ -183,24 +200,39 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
         }
 
         if user_input is not None:
-            # Combine stashed basic data with advanced fields
-            basic = getattr(self, "_basic", {})
-            interval = max(1, min(120, int(user_input[OPTION_UPDATE_INTERVAL_MINUTES])))
-            attempts = max(1, min(8, int(user_input[OPTION_MAX_ATTEMPTS])))
-            backoff_initial = max(0.1, min(30.0, float(user_input[OPTION_BACKOFF_INITIAL_SECONDS])))
-            backoff_max = max(backoff_initial, min(120.0, float(user_input[OPTION_BACKOFF_MAX_SECONDS])))
+            try:
+                # Combine stashed basic data with advanced fields
+                basic = getattr(self, "_basic", {})
+                interval = max(1, min(120, int(user_input[OPTION_UPDATE_INTERVAL_MINUTES])))
+                attempts = max(1, min(8, int(user_input[OPTION_MAX_ATTEMPTS])))
+                backoff_initial = max(0.1, min(30.0, float(user_input[OPTION_BACKOFF_INITIAL_SECONDS])))
+                backoff_max = max(backoff_initial, min(120.0, float(user_input[OPTION_BACKOFF_MAX_SECONDS])))
 
-            new_opts = {
-                CONF_NAME: basic.get(CONF_NAME, self.config_entry.data.get(CONF_NAME)),
-                CONF_ADDRESS: basic.get(CONF_ADDRESS, self.config_entry.data.get(CONF_ADDRESS)),
-                OPTION_ICON_MDI: basic.get(OPTION_ICON_MDI, self.config_entry.options.get(OPTION_ICON_MDI)),
-                OPTION_ICON_MODE: ICON_MODE_CUSTOM if basic.get(OPTION_ICON_MDI) else ICON_MODE_DYNAMIC,
-                OPTION_UPDATE_INTERVAL_MINUTES: interval,
-                OPTION_MAX_ATTEMPTS: attempts,
-                OPTION_BACKOFF_INITIAL_SECONDS: backoff_initial,
-                OPTION_BACKOFF_MAX_SECONDS: backoff_max,
-            }
-            return self.async_create_entry(title="Options", data=new_opts)
+                # Normalize icon stored in basic (it may already be normalized but be defensive)
+                def _normalize_icon_basic(val: Any) -> str | None:
+                    if val is None:
+                        return None
+                    if isinstance(val, str):
+                        return val or None
+                    if isinstance(val, dict):
+                        return val.get("icon") or val.get("value") or None
+                    return str(val)
+
+                icon_val = _normalize_icon_basic(basic.get(OPTION_ICON_MDI)) or self.config_entry.options.get(OPTION_ICON_MDI)
+
+                new_opts = {
+                    CONF_NAME: basic.get(CONF_NAME, self.config_entry.data.get(CONF_NAME)),
+                    CONF_ADDRESS: basic.get(CONF_ADDRESS, self.config_entry.data.get(CONF_ADDRESS)),
+                    OPTION_ICON_MDI: icon_val,
+                    OPTION_ICON_MODE: ICON_MODE_CUSTOM if icon_val else ICON_MODE_DYNAMIC,
+                    OPTION_UPDATE_INTERVAL_MINUTES: interval,
+                    OPTION_MAX_ATTEMPTS: attempts,
+                    OPTION_BACKOFF_INITIAL_SECONDS: backoff_initial,
+                    OPTION_BACKOFF_MAX_SECONDS: backoff_max,
+                }
+                return self.async_create_entry(title="Options", data=new_opts)
+            except Exception:
+                return self.async_show_form(step_id="advanced", errors={"base": "unknown"})
 
         schema = vol.Schema(
             {
