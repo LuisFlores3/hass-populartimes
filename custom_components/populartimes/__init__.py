@@ -209,6 +209,59 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 	# Listen for options/data updates to propagate to entities and keep title synced
 	entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+	# Register a helper service once so users can update an entry's options from UI/services
+	# This is a safe, optional convenience until the Configure dialog is available.
+	if not domain_data.get("service_update_registered"):
+		def _validate_str(v):
+			return str(v) if v is not None else None
+
+		async def _handle_update_entry(call) -> None:
+			"""Service handler to update a config entry's options.
+			Payload: entry_id (str), name (optional), address (optional), icon_mode (optional), icon_mdi (optional), update_interval_minutes (optional)
+			"""
+
+			entry_id = call.data.get("entry_id")
+			if not entry_id:
+				_LOGGER.error("populartimes.update_entry called without entry_id")
+				return
+
+			# Find the config entry
+			cfg = None
+			for e in hass.config_entries.async_entries(DOMAIN):
+				if e.entry_id == entry_id:
+					cfg = e
+					break
+			if not cfg:
+				_LOGGER.error("populartimes.update_entry: entry_id %s not found", entry_id)
+				return
+
+			# Build updated options dict
+			new_opts = dict(cfg.options or {})
+			if "name" in call.data:
+				new_opts["name"] = _validate_str(call.data.get("name"))
+			if "address" in call.data:
+				new_opts["address"] = _validate_str(call.data.get("address"))
+			if "icon_mode" in call.data:
+				new_opts[OPTION_ICON_MODE] = _validate_str(call.data.get("icon_mode"))
+			if "icon_mdi" in call.data:
+				new_opts[OPTION_ICON_MDI] = _validate_str(call.data.get("icon_mdi"))
+			if "update_interval_minutes" in call.data:
+				try:
+					new_opts[OPTION_UPDATE_INTERVAL_MINUTES] = int(call.data.get("update_interval_minutes"))
+				except Exception:
+					pass
+
+			# Apply the update
+			hass.config_entries.async_update_entry(cfg, options=new_opts)
+
+		# Register the service
+		hass.services.async_register(
+			DOMAIN,
+			"update_entry",
+			_handle_update_entry,
+		)
+		domain_data["service_update_registered"] = True
 	return True
 
 
