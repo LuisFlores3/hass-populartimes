@@ -184,7 +184,7 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 # HA's icon selector for real-time lookup and pick
                 vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): selector.IconSelector(),
                 # Offer an explicit open-advanced toggle (acts like an "Advanced..." button when checked)
-                vol.Optional("open_advanced", default=False): selector.BooleanSelector(),
+                vol.Optional("open_advanced", default=False, description={"name": "Advanced Settings"}): selector.BooleanSelector(),
             }
         )
 
