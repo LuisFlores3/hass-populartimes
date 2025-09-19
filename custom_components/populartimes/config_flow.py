@@ -55,6 +55,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Return the options flow handler for a config entry."""
+        return PopularTimesOptionsFlowHandler(config_entry)
+
     # Options flow is provided via a module-level async_get_options_flow below
 
     async def async_step_import(self, user_input: dict[str, Any]) -> config_entries.ConfigFlowResult:
