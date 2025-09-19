@@ -135,7 +135,7 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
         # Two-step flow: basic (name/address/icon) and optional advanced
         if user_input is not None:
             # If user requested advanced, stash the basic fields and show advanced step
-            if user_input.get("show_advanced"):
+            if user_input.get("Show Advanced Settings"):
                 # store partial data on the flow instance
                 self._basic = {
                     CONF_NAME: user_input[CONF_NAME],
@@ -164,7 +164,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_ADDRESS, default=defaults[CONF_ADDRESS]): str,
                 # HA's icon selector for real-time lookup and pick
                 vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): selector.IconSelector(),
-                vol.Optional("show_advanced", default=False): bool,
+                # nicer label shown in the UI for toggling advanced page
+                vol.Optional("Show Advanced Settings", default=False): selector.BooleanSelector(),
             }
         )
 
@@ -203,10 +204,18 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
-                vol.Required(OPTION_UPDATE_INTERVAL_MINUTES, default=defaults[OPTION_UPDATE_INTERVAL_MINUTES]): int,
-                vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): int,
-                vol.Required(OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]): float,
-                vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): float,
+                vol.Required(
+                    OPTION_UPDATE_INTERVAL_MINUTES, default=defaults[OPTION_UPDATE_INTERVAL_MINUTES]
+                ): selector.NumberSelector({"mode": "box", "min": 1, "max": 120, "step": 1, "data_type": "int"}),
+                vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): selector.NumberSelector(
+                    {"mode": "box", "min": 1, "max": 8, "step": 1, "data_type": "int"}
+                ),
+                vol.Required(
+                    OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]
+                ): selector.NumberSelector({"mode": "box", "min": 0.1, "max": 30.0, "step": 0.1, "data_type": "float"}),
+                vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): selector.NumberSelector(
+                    {"mode": "box", "min": 0.1, "max": 120.0, "step": 0.1, "data_type": "float"}
+                ),
             }
         )
 
