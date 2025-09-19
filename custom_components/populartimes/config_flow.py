@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 import hashlib
+import logging
 
 import voluptuous as vol
 
@@ -22,6 +23,8 @@ from .const import (
     ICON_MODE_DYNAMIC,
     ICON_MODE_CUSTOM,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _addr_unique_id(address: str) -> str:
@@ -172,8 +175,9 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 }
                 return self.async_create_entry(title="Options", data=new_opts)
             except Exception:  # broad except to ensure we return a form error, not a crash
-                # Show a friendly error in the flow and let HA log the exception
-                return self.async_show_form(step_id="init", errors={"base": "unknown"})
+                _LOGGER.exception("Error processing options init step")
+                # Show a friendly, specific error code in the flow while logging the traceback
+                return self.async_show_form(step_id="init", errors={"base": "submit_failed"})
 
         schema = vol.Schema(
             {
@@ -232,7 +236,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 }
                 return self.async_create_entry(title="Options", data=new_opts)
             except Exception:
-                return self.async_show_form(step_id="advanced", errors={"base": "unknown"})
+                _LOGGER.exception("Error processing options advanced step")
+                return self.async_show_form(step_id="advanced", errors={"base": "submit_failed"})
 
         schema = vol.Schema(
             {
