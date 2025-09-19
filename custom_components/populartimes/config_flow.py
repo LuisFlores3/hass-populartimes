@@ -135,32 +135,33 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
             OPTION_ICON_MDI: cur_opts.get(OPTION_ICON_MDI, "mdi:clock-outline"),
         }
 
-        # Two-step flow: basic (name/address/icon) and optional advanced
+        # Basic options: save on submit (advanced defaults are applied)
         if user_input is not None:
             try:
-                # Helper to normalize the IconSelector value (it can be a dict in newer frontends)
+                # Normalize icon selector value
                 def _normalize_icon(raw_val: Any) -> str | None:
                     if raw_val is None:
                         return None
                     if isinstance(raw_val, str):
                         return raw_val or None
                     if isinstance(raw_val, dict):
-                        # Icon selector may return {'icon': 'mdi:clock-outline'} or {'value': 'mdi:...'}
                         return raw_val.get("icon") or raw_val.get("value") or None
                     return str(raw_val)
 
                 icon_val = _normalize_icon(user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]))
 
-                # Always stash basic and proceed to the advanced step. This avoids relying on
-                # a frontend-normalized toggle key and prevents the transition failure.
-                self._basic = {
+                new_opts = {
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_ADDRESS: user_input[CONF_ADDRESS],
                     OPTION_ICON_MDI: icon_val or defaults[OPTION_ICON_MDI],
                     OPTION_ICON_MODE: ICON_MODE_CUSTOM if icon_val else ICON_MODE_DYNAMIC,
+                    OPTION_UPDATE_INTERVAL_MINUTES: defaults[OPTION_UPDATE_INTERVAL_MINUTES],
+                    OPTION_MAX_ATTEMPTS: defaults[OPTION_MAX_ATTEMPTS],
+                    OPTION_BACKOFF_INITIAL_SECONDS: defaults[OPTION_BACKOFF_INITIAL_SECONDS],
+                    OPTION_BACKOFF_MAX_SECONDS: defaults[OPTION_BACKOFF_MAX_SECONDS],
                 }
-                return await self.async_step_advanced()
-            except Exception:  # broad except to ensure we return a form error, not a crash
+                return self.async_create_entry(title="Options", data=new_opts)
+            except Exception:
                 _LOGGER.exception("Error processing options init step")
                 return self.async_show_form(step_id="init", errors={"base": "submit_failed"})
 
@@ -170,8 +171,7 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Required(CONF_ADDRESS, default=defaults[CONF_ADDRESS]): str,
                 # HA's icon selector for real-time lookup and pick
                 vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): selector.IconSelector(),
-                # nicer label shown in the UI for toggling advanced page
-                vol.Optional("show_advanced", default=False): selector.BooleanSelector(),
+                # (advanced controls removed from basic UI to avoid toggle quirks)
             }
         )
 
