@@ -151,7 +151,8 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
 
                 icon_val = _normalize_icon(user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]))
 
-                if user_input.get("open_advanced"):
+                # Accept either the explicit open_advanced key or a legacy show_advanced key
+                if user_input.get("open_advanced") or user_input.get("show_advanced"):
                     # stash and go to advanced step
                     self._basic = {
                         CONF_NAME: user_input[CONF_NAME],
@@ -241,15 +242,15 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
             {
                 vol.Required(
                     OPTION_UPDATE_INTERVAL_MINUTES, default=defaults[OPTION_UPDATE_INTERVAL_MINUTES]
-                ): selector.NumberSelector({"mode": "box", "min": 1, "max": 120, "step": 1, "data_type": "int"}),
+                ): selector.NumberSelector({"mode": "box", "min": 1, "max": 120, "step": 1}),
                 vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): selector.NumberSelector(
-                    {"mode": "box", "min": 1, "max": 8, "step": 1, "data_type": "int"}
+                    {"mode": "box", "min": 1, "max": 8, "step": 1}
                 ),
                 vol.Required(
                     OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]
-                ): selector.NumberSelector({"mode": "box", "min": 0.1, "max": 30.0, "step": 0.1, "data_type": "float"}),
+                ): selector.NumberSelector({"mode": "box", "min": 0.1, "max": 30.0, "step": 0.1}),
                 vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): selector.NumberSelector(
-                    {"mode": "box", "min": 0.1, "max": 120.0, "step": 0.1, "data_type": "float"}
+                    {"mode": "box", "min": 0.1, "max": 120.0, "step": 0.1}
                 ),
             }
         )
