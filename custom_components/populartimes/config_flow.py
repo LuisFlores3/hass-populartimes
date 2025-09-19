@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
@@ -131,47 +132,85 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
             OPTION_ICON_MDI: cur_opts.get(OPTION_ICON_MDI, "mdi:clock-outline"),
         }
 
+        # Two-step flow: basic (name/address/icon) and optional advanced
         if user_input is not None:
-            # Save edits as options; the integration will read options first.
-            # Avoid updating entry data/title here to prevent reload races during the flow.
-            # Normalize & clamp
-            interval = max(1, min(120, int(user_input[OPTION_UPDATE_INTERVAL_MINUTES])))
-            attempts = max(1, min(8, int(user_input[OPTION_MAX_ATTEMPTS])))
-            backoff_initial = max(0.1, min(30.0, float(user_input[OPTION_BACKOFF_INITIAL_SECONDS])))
-            backoff_max = max(backoff_initial, min(120.0, float(user_input[OPTION_BACKOFF_MAX_SECONDS])))
-            icon_mode = user_input.get(OPTION_ICON_MODE, ICON_MODE_DYNAMIC)
-            if icon_mode not in (ICON_MODE_DYNAMIC, ICON_MODE_CUSTOM):
-                icon_mode = ICON_MODE_DYNAMIC
-            icon_mdi = str(user_input.get(OPTION_ICON_MDI, "mdi:clock-outline")).strip() or "mdi:clock-outline"
-
-            return self.async_create_entry(
-                title="Options",
-                data={
+            # If user requested advanced, stash the basic fields and show advanced step
+            if user_input.get("show_advanced"):
+                # store partial data on the flow instance
+                self._basic = {
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_ADDRESS: user_input[CONF_ADDRESS],
-                    OPTION_UPDATE_INTERVAL_MINUTES: interval,
-                    OPTION_MAX_ATTEMPTS: attempts,
-                    OPTION_BACKOFF_INITIAL_SECONDS: backoff_initial,
-                    OPTION_BACKOFF_MAX_SECONDS: backoff_max,
-                    OPTION_ICON_MODE: icon_mode,
-                    OPTION_ICON_MDI: icon_mdi,
-                },
-            )
+                    OPTION_ICON_MDI: user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]),
+                    OPTION_ICON_MODE: defaults[OPTION_ICON_MODE],
+                }
+                return await self.async_step_advanced()
+
+            # Otherwise, persist options immediately (basic-only)
+            new_opts = {
+                CONF_NAME: user_input[CONF_NAME],
+                CONF_ADDRESS: user_input[CONF_ADDRESS],
+                OPTION_ICON_MDI: user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]),
+                OPTION_ICON_MODE: ICON_MODE_CUSTOM if user_input.get(OPTION_ICON_MDI) else ICON_MODE_DYNAMIC,
+                OPTION_UPDATE_INTERVAL_MINUTES: defaults[OPTION_UPDATE_INTERVAL_MINUTES],
+                OPTION_MAX_ATTEMPTS: defaults[OPTION_MAX_ATTEMPTS],
+                OPTION_BACKOFF_INITIAL_SECONDS: defaults[OPTION_BACKOFF_INITIAL_SECONDS],
+                OPTION_BACKOFF_MAX_SECONDS: defaults[OPTION_BACKOFF_MAX_SECONDS],
+            }
+            return self.async_create_entry(title="Options", data=new_opts)
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=defaults[CONF_NAME]): str,
                 vol.Required(CONF_ADDRESS, default=defaults[CONF_ADDRESS]): str,
-                vol.Required(OPTION_UPDATE_INTERVAL_MINUTES, default=defaults[OPTION_UPDATE_INTERVAL_MINUTES]): int,
-                vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): int,
-                vol.Required(OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]): float,
-                vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): float,
-                vol.Required(OPTION_ICON_MODE, default=defaults[OPTION_ICON_MODE]): vol.In([ICON_MODE_DYNAMIC, ICON_MODE_CUSTOM]),
-                vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): str,
+                # HA's icon selector for real-time lookup and pick
+                vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): selector.IconSelector(),
+                vol.Optional("show_advanced", default=False): bool,
             }
         )
 
         return self.async_show_form(step_id="init", data_schema=schema)
+
+    async def async_step_advanced(self, user_input: dict[str, Any] | None = None):
+        """Advanced options: retry/backoff and interval."""
+        # Defaults (prefer existing options)
+        cur_opts = self.config_entry.options
+        defaults = {
+            OPTION_UPDATE_INTERVAL_MINUTES: int(cur_opts.get(OPTION_UPDATE_INTERVAL_MINUTES, 10)),
+            OPTION_MAX_ATTEMPTS: int(cur_opts.get(OPTION_MAX_ATTEMPTS, 4)),
+            OPTION_BACKOFF_INITIAL_SECONDS: float(cur_opts.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0)),
+            OPTION_BACKOFF_MAX_SECONDS: float(cur_opts.get(OPTION_BACKOFF_MAX_SECONDS, 8.0)),
+        }
+
+        if user_input is not None:
+            # Combine stashed basic data with advanced fields
+            basic = getattr(self, "_basic", {})
+            interval = max(1, min(120, int(user_input[OPTION_UPDATE_INTERVAL_MINUTES])))
+            attempts = max(1, min(8, int(user_input[OPTION_MAX_ATTEMPTS])))
+            backoff_initial = max(0.1, min(30.0, float(user_input[OPTION_BACKOFF_INITIAL_SECONDS])))
+            backoff_max = max(backoff_initial, min(120.0, float(user_input[OPTION_BACKOFF_MAX_SECONDS])))
+
+            new_opts = {
+                CONF_NAME: basic.get(CONF_NAME, self.config_entry.data.get(CONF_NAME)),
+                CONF_ADDRESS: basic.get(CONF_ADDRESS, self.config_entry.data.get(CONF_ADDRESS)),
+                OPTION_ICON_MDI: basic.get(OPTION_ICON_MDI, self.config_entry.options.get(OPTION_ICON_MDI)),
+                OPTION_ICON_MODE: ICON_MODE_CUSTOM if basic.get(OPTION_ICON_MDI) else ICON_MODE_DYNAMIC,
+                OPTION_UPDATE_INTERVAL_MINUTES: interval,
+                OPTION_MAX_ATTEMPTS: attempts,
+                OPTION_BACKOFF_INITIAL_SECONDS: backoff_initial,
+                OPTION_BACKOFF_MAX_SECONDS: backoff_max,
+            }
+            return self.async_create_entry(title="Options", data=new_opts)
+
+        schema = vol.Schema(
+            {
+                vol.Required(OPTION_UPDATE_INTERVAL_MINUTES, default=defaults[OPTION_UPDATE_INTERVAL_MINUTES]): int,
+                vol.Required(OPTION_MAX_ATTEMPTS, default=defaults[OPTION_MAX_ATTEMPTS]): int,
+                vol.Required(OPTION_BACKOFF_INITIAL_SECONDS, default=defaults[OPTION_BACKOFF_INITIAL_SECONDS]): float,
+                vol.Required(OPTION_BACKOFF_MAX_SECONDS, default=defaults[OPTION_BACKOFF_MAX_SECONDS]): float,
+            }
+        )
+
+        return self.async_show_form(step_id="advanced", data_schema=schema)
 
 
 # Expose options flow factory at module level (required by Home Assistant)
