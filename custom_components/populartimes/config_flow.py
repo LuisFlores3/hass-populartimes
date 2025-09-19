@@ -152,7 +152,7 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 icon_val = _normalize_icon(user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]))
 
                 # If user requested advanced, stash the basic fields and show advanced step
-                if user_input.get("Show Advanced Settings"):
+                if user_input.get("show_advanced"):
                     # store partial data on the flow instance
                     self._basic = {
                         CONF_NAME: user_input[CONF_NAME],
@@ -186,7 +186,7 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
                 # HA's icon selector for real-time lookup and pick
                 vol.Optional(OPTION_ICON_MDI, default=defaults[OPTION_ICON_MDI]): selector.IconSelector(),
                 # nicer label shown in the UI for toggling advanced page
-                vol.Optional("Show Advanced Settings", default=False): selector.BooleanSelector(),
+                vol.Optional("show_advanced", default=False): selector.BooleanSelector(),
             }
         )
 
@@ -194,6 +194,7 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_advanced(self, user_input: dict[str, Any] | None = None):
         """Advanced options: retry/backoff and interval."""
+        _LOGGER.debug("Entering async_step_advanced; stashed basic=%s", getattr(self, "_basic", {}))
         # Defaults (prefer existing options)
         cur_opts = self.config_entry.options
         defaults = {
