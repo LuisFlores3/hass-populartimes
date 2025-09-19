@@ -151,32 +151,17 @@ class PopularTimesOptionsFlowHandler(config_entries.OptionsFlow):
 
                 icon_val = _normalize_icon(user_input.get(OPTION_ICON_MDI, defaults[OPTION_ICON_MDI]))
 
-                # If user requested advanced, stash the basic fields and show advanced step
-                if user_input.get("show_advanced"):
-                    # store partial data on the flow instance
-                    self._basic = {
-                        CONF_NAME: user_input[CONF_NAME],
-                        CONF_ADDRESS: user_input[CONF_ADDRESS],
-                        OPTION_ICON_MDI: icon_val or defaults[OPTION_ICON_MDI],
-                        OPTION_ICON_MODE: defaults[OPTION_ICON_MODE],
-                    }
-                    return await self.async_step_advanced()
-
-                # Otherwise, persist options immediately (basic-only)
-                new_opts = {
+                # Always stash basic and proceed to the advanced step. This avoids relying on
+                # a frontend-normalized toggle key and prevents the transition failure.
+                self._basic = {
                     CONF_NAME: user_input[CONF_NAME],
                     CONF_ADDRESS: user_input[CONF_ADDRESS],
                     OPTION_ICON_MDI: icon_val or defaults[OPTION_ICON_MDI],
                     OPTION_ICON_MODE: ICON_MODE_CUSTOM if icon_val else ICON_MODE_DYNAMIC,
-                    OPTION_UPDATE_INTERVAL_MINUTES: defaults[OPTION_UPDATE_INTERVAL_MINUTES],
-                    OPTION_MAX_ATTEMPTS: defaults[OPTION_MAX_ATTEMPTS],
-                    OPTION_BACKOFF_INITIAL_SECONDS: defaults[OPTION_BACKOFF_INITIAL_SECONDS],
-                    OPTION_BACKOFF_MAX_SECONDS: defaults[OPTION_BACKOFF_MAX_SECONDS],
                 }
-                return self.async_create_entry(title="Options", data=new_opts)
+                return await self.async_step_advanced()
             except Exception:  # broad except to ensure we return a form error, not a crash
                 _LOGGER.exception("Error processing options init step")
-                # Show a friendly, specific error code in the flow while logging the traceback
                 return self.async_show_form(step_id="init", errors={"base": "submit_failed"})
 
         schema = vol.Schema(
