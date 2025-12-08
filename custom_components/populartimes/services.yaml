@@ -1,0 +1,37 @@
+update_entry:
+  name: Update Entry
+  description: Updates the options for a Popular Times config entry.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: The configuration entry ID to update.
+      required: true
+      selector:
+        text:
+    name:
+      name: Name
+      description: Name of the place.
+      required: false
+      selector:
+        text:
+    address:
+      name: Address
+      description: Address of the place.
+      required: false
+      selector:
+        text:
+    icon_mode:
+      name: Icon Mode
+      description: "Control how to display the icon (static vs dynamic)."
+      required: false
+      selector:
+        text:
+    update_interval_minutes:
+      name: Update Interval
+      description: How often to update data in minutes.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: minutes
