@@ -178,7 +178,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 				attributes["popularity_is_live"] = False
 			except (KeyError, IndexError, TypeError):
 				_LOGGER.debug("Historical popularity not available for fallback for '%s'", address)
-				popularity = None
+				popularity = 0
 		else:
 			attributes["popularity_is_live"] = True
 
