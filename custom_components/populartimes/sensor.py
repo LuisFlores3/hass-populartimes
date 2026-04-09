@@ -1,85 +1,15 @@
 """Support for Google Maps Popular Times as a Home Assistant sensor."""
-from datetime import datetime, timedelta
+from datetime import datetime
 import hashlib
 import logging
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
-from homeassistant.config_entries import SOURCE_IMPORT
-import homeassistant.helpers.config_validation as cv
-from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
-import voluptuous as vol
 from homeassistant.util import slugify
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-
-
 _LOGGER = logging.getLogger(__name__)
-
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_NAME): cv.string,
-        vol.Required(CONF_ADDRESS): cv.string,
-    }
-)
-
-SCAN_INTERVAL = timedelta(minutes=10)
-
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Backward-compat entry point; delegate to async variant."""
-    hass.async_create_task(async_setup_platform(hass, config, add_entities, discovery_info))
-
-
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
-    """Migrate YAML-defined sensor to a config entry and stop setting up from YAML."""
-    from .const import DOMAIN  # Local import to avoid editor false positives
-
-    name: str = config[CONF_NAME]
-    address: str = config[CONF_ADDRESS]
-
-    norm_addr = address.strip().lower()
-
-    # Avoid duplicate entries if already configured (compare normalized address)
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        if entry.data.get(CONF_ADDRESS, "").strip().lower() == norm_addr:
-            _LOGGER.info(
-                "YAML configuration ignored; config entry already exists for address '%s'",
-                address,
-            )
-            return
-
-    _LOGGER.warning(
-        "YAML configuration for Popular Times is deprecated and will be imported to UI: name='%s', address='%s'",
-        name,
-        address,
-    )
-
-    await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": SOURCE_IMPORT},
-        data={CONF_NAME: name, CONF_ADDRESS: address},
-    )
-
-    # Notify user (once per startup) that YAML can be removed
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    if not domain_data.get("yaml_migration_notified"):
-        # Mark as notified first to avoid any race in quick successive imports
-        domain_data["yaml_migration_notified"] = True
-        await hass.services.async_call(
-            "persistent_notification",
-            "create",
-            {
-                "title": "Popular Times: YAML migrated",
-                "message": (
-                    "Popular Times entries were imported from YAML to the UI. "
-                    "You can now remove them from configuration.yaml."
-                ),
-                # Use a fixed ID so repeated calls update the same notification
-                "notification_id": "populartimes_yaml_migration",
-            },
-            blocking=False,
-        )
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -160,11 +90,6 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
         """Return the current popularity as the sensor value (cached)."""
         return self._state
 
-    # Back-compat for older HA versions that still access state
-    @property
-    def state(self):  # pragma: no cover - compatibility shim
-        return self._state
-    
     @property
     def state_class(self):
         """Return the state class of the sensor."""

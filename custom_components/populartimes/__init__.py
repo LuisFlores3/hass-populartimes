@@ -10,8 +10,10 @@ import json
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.const import Platform
+from homeassistant.const import Platform, CONF_NAME, CONF_ADDRESS
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+import livepopulartimes  # type: ignore
 
 from .const import (
 	DOMAIN,
@@ -22,7 +24,6 @@ from .const import (
 	OPTION_ICON_MODE,
 	OPTION_ICON_MDI,
 )
-from homeassistant.const import CONF_NAME, CONF_ADDRESS
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,18 +31,27 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-	"""Set up Popular Times from a config entry."""
-	# Ensure domain data storage
-	domain_data = hass.data.setdefault(DOMAIN, {})
+class PopularTimesCoordinator(DataUpdateCoordinator):
+	"""Class to manage fetching Popular Times data from Google Maps."""
 
-	# Build a coordinator per entry to centralize polling and retries
-	async def _async_update_data() -> dict:
-		# Read current values (options preferred)
-		name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, ""))
-		address = entry.options.get(CONF_ADDRESS, entry.data.get(CONF_ADDRESS, ""))
+	def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+		"""Initialize."""
+		self.entry = entry
+		interval_min = int(entry.options.get(OPTION_UPDATE_INTERVAL_MINUTES, 10))
+		interval_min = max(1, min(120, interval_min))
 
-		# Build query using both name and address (avoid duplicating name if already present)
+		super().__init__(
+			hass,
+			_LOGGER,
+			name=f"PopularTimes {entry.title}",
+			update_interval=timedelta(minutes=interval_min),
+		)
+
+	async def _async_update_data(self) -> dict:
+		"""Fetch data from Google Maps."""
+		name = self.entry.options.get(CONF_NAME, self.entry.data.get(CONF_NAME, ""))
+		address = self.entry.options.get(CONF_ADDRESS, self.entry.data.get(CONF_ADDRESS, ""))
+
 		name_s = (name or "").strip()
 		addr_s = (address or "").strip()
 		if name_s:
@@ -54,21 +64,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 		else:
 			query = addr_s
 
-		# Import lazily to avoid editor warnings and ensure module load at runtime
-		import livepopulartimes  # type: ignore
-
-		# Retry with exponential backoff and jitter for transient errors (tunable)
-		max_attempts = int(entry.options.get(OPTION_MAX_ATTEMPTS, 4))
-		delay = float(entry.options.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0))
-		max_delay = float(entry.options.get(OPTION_BACKOFF_MAX_SECONDS, 8.0))
+		max_attempts = int(self.entry.options.get(OPTION_MAX_ATTEMPTS, 4))
+		delay = float(self.entry.options.get(OPTION_BACKOFF_INITIAL_SECONDS, 1.0))
+		max_delay = float(self.entry.options.get(OPTION_BACKOFF_MAX_SECONDS, 8.0))
 		last_exc: Exception | None = None
 		result = None
+
 		for attempt in range(1, max_attempts + 1):
 			try:
-				result = await hass.async_add_executor_job(
+				result = await self.hass.async_add_executor_job(
 					livepopulartimes.get_populartimes_by_address, query
 				)
-				# Treat empty result as retryable once or twice; Google can be flaky
 				if result:
 					break
 				raise UpdateFailed(f"No data returned for '{address}'")
@@ -89,15 +95,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 					raise UpdateFailed(
 						f"HTTP error fetching '{address}' (status {status}): {req_err}"
 					) from req_err
-			except UpdateFailed as ex:  # raised above for empty result
+			except UpdateFailed as ex:
 				last_exc = ex
-				retryable = attempt < max_attempts  # try a couple of times
+				retryable = attempt < max_attempts
 			except Exception as ex:  # noqa: BLE001
-				# Non-network unexpected errors are not retryable
 				raise UpdateFailed(f"Unexpected error fetching '{address}': {ex}") from ex
 
 			if attempt < max_attempts and retryable:
-				# Exponential backoff with jitter
 				sleep_for = min(delay, max_delay)
 				jitter = random.uniform(0, 0.4 * sleep_for)
 				total_sleep = sleep_for + jitter
@@ -112,7 +116,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 				await asyncio.sleep(total_sleep)
 				delay = min(delay * 2, max_delay)
 				continue
-			# Give up
 			raise UpdateFailed(f"Network error fetching '{address}': {last_exc}") from last_exc
 
 		popularity = result.get("current_popularity")
@@ -131,7 +134,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 			"popularity_sunday": None,
 		}
 
-		# Try to populate latitude/longitude from common result shapes
 		try:
 			lat = None
 			lon = None
@@ -146,13 +148,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 				lon = coords.get("lng") or coords.get("lon") or coords.get("longitude")
 			elif isinstance(coords, (list, tuple)) and len(coords) >= 2:
 				lat, lon = coords[0], coords[1]
-			# Top-level fallbacks
 			lat = lat if lat is not None else result.get("lat") or result.get("latitude")
 			lon = lon if lon is not None else result.get("lng") or result.get("lon") or result.get("longitude")
 			if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
 				attributes["latitude"] = float(lat)
 				attributes["longitude"] = float(lon)
-		except Exception:  # pragma: no cover - best-effort extraction
+		except Exception:  # pragma: no cover
 			pass
 
 		try:
@@ -165,11 +166,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 			attributes["popularity_saturday"] = pop[5]["data"] if len(pop) > 5 else None
 			attributes["popularity_sunday"] = pop[6]["data"] if len(pop) > 6 else None
 		except (KeyError, IndexError, TypeError):
-			# Keep attributes None if malformed
 			pass
 
 		if popularity is None:
-			# Fallback to historical based on current time
 			dt = datetime.now()
 			weekday_index = dt.weekday()
 			hour_index = dt.hour
@@ -187,53 +186,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 		return {"state": popularity, "attributes": attributes}
 
-	# Polling interval (tunable via options)
-	interval_min = int(entry.options.get(OPTION_UPDATE_INTERVAL_MINUTES, 10))
-	interval_min = max(1, min(120, interval_min))
 
-	coordinator = DataUpdateCoordinator(
-		hass,
-		_LOGGER,
-		name=f"PopularTimes {entry.title}",
-		update_method=_async_update_data,
-		update_interval=timedelta(minutes=interval_min),
-	)
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+	"""Set up Popular Times from a config entry."""
+	domain_data = hass.data.setdefault(DOMAIN, {})
 
-	# First refresh before setting up entities
+	coordinator = PopularTimesCoordinator(hass, entry)
+
 	await coordinator.async_config_entry_first_refresh()
 
-	# Keep the entry title in sync with the configured Name (options preferred)
 	desired_title = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, entry.title))
 	if desired_title and entry.title != desired_title:
-		# Avoid triggering an extra reload cycle when we update the title
 		domain_data["skip_next_reload"] = True
 		hass.config_entries.async_update_entry(entry, title=desired_title)
 
-	# Store coordinator for platform setup
 	domain_data[entry.entry_id] = {"coordinator": coordinator, **domain_data.get(entry.entry_id, {})}
 
 	await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-	# Listen for options/data updates to propagate to entities and keep title synced
 	entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-	# Register a helper service once so users can update an entry's options from UI/services
-	# This is a safe, optional convenience until the Configure dialog is available.
 	if not domain_data.get("service_update_registered"):
 		def _validate_str(v):
 			return str(v) if v is not None else None
 
 		async def _handle_update_entry(call) -> None:
-			"""Service handler to update a config entry's options.
-			Payload: entry_id (str), name (optional), address (optional), icon_mode (optional), icon_mdi (optional), update_interval_minutes (optional)
-			"""
-
 			entry_id = call.data.get("entry_id")
 			if not entry_id:
 				_LOGGER.error("populartimes.update_entry called without entry_id")
 				return
 
-			# Find the config entry
 			cfg = None
 			for e in hass.config_entries.async_entries(DOMAIN):
 				if e.entry_id == entry_id:
@@ -243,7 +225,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 				_LOGGER.error("populartimes.update_entry: entry_id %s not found", entry_id)
 				return
 
-			# Build updated options dict
 			new_opts = dict(cfg.options or {})
 			if "name" in call.data:
 				new_opts["name"] = _validate_str(call.data.get("name"))
@@ -259,10 +240,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 				except Exception:
 					pass
 
-			# Apply the update
 			hass.config_entries.async_update_entry(cfg, options=new_opts)
 
-		# Register the service
 		hass.services.async_register(
 			DOMAIN,
 			"update_entry",
@@ -275,7 +254,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 	"""Unload a config entry."""
 	ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-	# Cleanup coordinator
 	if ok:
 		domain_data = hass.data.setdefault(DOMAIN, {})
 		domain_data.pop(entry.entry_id, None)
@@ -286,16 +264,13 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 	"""Handle config entry updates: sync title and then reload when needed."""
 	domain_data = hass.data.setdefault(DOMAIN, {})
 
-	# If the last update was just a title sync, skip this reload once
 	if domain_data.get("skip_next_reload"):
 		domain_data["skip_next_reload"] = False
 		return
 
-	# Keep the entry title aligned with Name
-	from homeassistant.const import CONF_NAME as _CONF_NAME  # local import to avoid editor nags
+	from homeassistant.const import CONF_NAME as _CONF_NAME
 	desired_title = entry.options.get(_CONF_NAME, entry.data.get(_CONF_NAME, entry.title))
 	if desired_title and entry.title != desired_title:
-		# Update title first, then skip the subsequent reload from this update
 		domain_data["skip_next_reload"] = True
 		hass.config_entries.async_update_entry(entry, title=desired_title)
 		return
