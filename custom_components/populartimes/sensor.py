@@ -13,7 +13,7 @@ from homeassistant.util import slugify
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-import livepopulartimes
+
 
 _LOGGER = logging.getLogger(__name__)
 

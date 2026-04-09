@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta, datetime
 import asyncio
 import random
+import json
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -18,6 +19,8 @@ from .const import (
 	OPTION_MAX_ATTEMPTS,
 	OPTION_BACKOFF_INITIAL_SECONDS,
 	OPTION_BACKOFF_MAX_SECONDS,
+	OPTION_ICON_MODE,
+	OPTION_ICON_MDI,
 )
 from homeassistant.const import CONF_NAME, CONF_ADDRESS
 from requests.exceptions import ConnectionError as ConnectError, HTTPError, Timeout
@@ -73,6 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 				last_exc = req_err
 				retryable = True
 			except ConnectError as req_err:
+				last_exc = req_err
+				retryable = True
+			except json.decoder.JSONDecodeError as req_err:
 				last_exc = req_err
 				retryable = True
 			except HTTPError as req_err:
@@ -170,8 +176,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 			try:
 				popularity = result["populartimes"][weekday_index]["data"][hour_index]
 				attributes["popularity_is_live"] = False
-			except (KeyError, IndexError, TypeError) as ex:
-				raise UpdateFailed("Historical popularity not available for fallback") from ex
+			except (KeyError, IndexError, TypeError):
+				_LOGGER.debug("Historical popularity not available for fallback for '%s'", address)
+				popularity = None
 		else:
 			attributes["popularity_is_live"] = True
 
