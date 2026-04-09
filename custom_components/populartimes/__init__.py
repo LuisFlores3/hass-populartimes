@@ -122,6 +122,7 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 		attributes: dict[str, object] = {
 			"maps_name": result.get("name"),
 			"address": result.get("address"),
+			"configured_address": address,
 			"latitude": None,
 			"longitude": None,
 			"popularity_is_live": None,
