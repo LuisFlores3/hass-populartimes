@@ -49,12 +49,27 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 			update_interval=timedelta(minutes=interval_min),
 		)
 
-	def _parse_duration(self, duration_str: str) -> int | None:
-		"""Convert localized duration strings (e.g. '15-45 min', '1 hr') to minutes."""
-		if not duration_str or not isinstance(duration_str, str):
+	def _parse_duration(self, duration: object) -> int | None:
+		"""Convert localized duration strings or lists of integers to minutes."""
+		if not duration:
 			return None
 
-		duration_str = duration_str.lower()
+		# Case 1: List or Tuple [min, max] - often comes from scraper as integers
+		if isinstance(duration, (list, tuple)):
+			try:
+				# Use the average of the range
+				nums = [float(v) for v in duration if isinstance(v, (int, float, str))]
+				if not nums:
+					return None
+				return int(round(sum(nums) / len(nums)))
+			except (ValueError, ZeroDivisionError):
+				return None
+
+		# Case 2: String parsing (e.g., "15-45 min", "1 hr")
+		if not isinstance(duration, str):
+			return None
+
+		duration_str = duration.lower()
 		# Find all numbers (including decimals)
 		numbers = re.findall(r"(\d+(?:\.\d+)?)", duration_str)
 		if not numbers:
@@ -67,9 +82,9 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 
 		try:
 			# Convert and apply multiplier
-			values = [float(n) * multiplier for n in numbers]
+			vals = [float(n) * multiplier for n in numbers]
 			# Average if range, otherwise first value
-			avg_minutes = sum(values) / len(values)
+			avg_minutes = sum(vals) / len(vals)
 			return int(round(avg_minutes))
 		except (ValueError, ZeroDivisionError):
 			return None
@@ -212,7 +227,7 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 		# v3: Additional venue metadata from scraper
 		attributes["rating"] = result.get("rating")
 		attributes["rating_n"] = result.get("rating_n")
-		_LOGGER.warning("RAW WAIT: %s | RAW SPENT: %s", result.get("time_wait"), result.get("time_spent")); attributes["time_wait"] = self._parse_duration(result.get("time_wait"))
+		attributes["time_wait"] = self._parse_duration(result.get("time_wait"))
 		attributes["time_spent"] = self._parse_duration(result.get("time_spent"))
 
 		if isinstance(popularity, (int, float)):
