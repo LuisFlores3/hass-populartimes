@@ -212,7 +212,7 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 		# v3: Additional venue metadata from scraper
 		attributes["rating"] = result.get("rating")
 		attributes["rating_n"] = result.get("rating_n")
-		attributes["time_wait"] = self._parse_duration(result.get("time_wait"))
+		_LOGGER.warning("RAW WAIT: %s | RAW SPENT: %s", result.get("time_wait"), result.get("time_spent")); attributes["time_wait"] = self._parse_duration(result.get("time_wait"))
 		attributes["time_spent"] = self._parse_duration(result.get("time_spent"))
 
 		if isinstance(popularity, (int, float)):
