@@ -14,6 +14,7 @@ from homeassistant.const import Platform, CONF_NAME, CONF_ADDRESS
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers import device_registry as dr
 
+import re
 import livepopulartimes  # type: ignore
 
 from .const import (
@@ -47,6 +48,31 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 			name=f"PopularTimes {entry.title}",
 			update_interval=timedelta(minutes=interval_min),
 		)
+
+	def _parse_duration(self, duration_str: str) -> int | None:
+		"""Convert localized duration strings (e.g. '15-45 min', '1 hr') to minutes."""
+		if not duration_str or not isinstance(duration_str, str):
+			return None
+
+		duration_str = duration_str.lower()
+		# Find all numbers (including decimals)
+		numbers = re.findall(r"(\d+(?:\.\d+)?)", duration_str)
+		if not numbers:
+			return None
+
+		# Detect multiplier
+		multiplier = 1
+		if "hr" in duration_str or "hour" in duration_str:
+			multiplier = 60
+
+		try:
+			# Convert and apply multiplier
+			values = [float(n) * multiplier for n in numbers]
+			# Average if range, otherwise first value
+			avg_minutes = sum(values) / len(values)
+			return int(round(avg_minutes))
+		except (ValueError, ZeroDivisionError):
+			return None
 
 	async def _async_update_data(self) -> dict:
 		"""Fetch data from Google Maps."""
@@ -186,8 +212,8 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 		# v3: Additional venue metadata from scraper
 		attributes["rating"] = result.get("rating")
 		attributes["rating_n"] = result.get("rating_n")
-		attributes["time_wait"] = result.get("time_wait")
-		attributes["time_spent"] = result.get("time_spent")
+		attributes["time_wait"] = self._parse_duration(result.get("time_wait"))
+		attributes["time_spent"] = self._parse_duration(result.get("time_spent"))
 
 		if isinstance(popularity, (int, float)):
 			popularity = max(0, min(100, int(popularity)))
