@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform, CONF_NAME, CONF_ADDRESS
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers import device_registry as dr
 
 import livepopulartimes  # type: ignore
 
@@ -182,6 +183,12 @@ class PopularTimesCoordinator(DataUpdateCoordinator):
 		else:
 			attributes["popularity_is_live"] = True
 
+		# v3: Additional venue metadata from scraper
+		attributes["rating"] = result.get("rating")
+		attributes["rating_n"] = result.get("rating_n")
+		attributes["time_wait"] = result.get("time_wait")
+		attributes["time_spent"] = result.get("time_spent")
+
 		if isinstance(popularity, (int, float)):
 			popularity = max(0, min(100, int(popularity)))
 
@@ -200,6 +207,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 	if desired_title and entry.title != desired_title:
 		domain_data["skip_next_reload"] = True
 		hass.config_entries.async_update_entry(entry, title=desired_title)
+
+	# v3: Register each venue as a Device in the HA Device Registry
+	device_reg = dr.async_get(hass)
+	device_reg.async_get_or_create(
+		config_entry_id=entry.entry_id,
+		identifiers={(DOMAIN, entry.entry_id)},
+		name=desired_title,
+		manufacturer="Popular Times",
+		model="Google Maps Scraping",
+	)
 
 	domain_data[entry.entry_id] = {"coordinator": coordinator, **domain_data.get(entry.entry_id, {})}
 

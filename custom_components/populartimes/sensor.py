@@ -2,9 +2,10 @@
 from datetime import datetime
 import hashlib
 import logging
+from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.const import CONF_NAME, CONF_ADDRESS
+from homeassistant.components.sensor import SensorEntity, SensorStateClass, SensorDeviceClass
+from homeassistant.const import CONF_NAME, CONF_ADDRESS, UnitOfTime
 from homeassistant.util import slugify
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -52,8 +53,13 @@ async def async_setup_entry(hass, entry, async_add_entities):
     from .const import DOMAIN  # local import
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
 
-    entity = PopularTimesSensor(coordinator, name, address, stable_unique_id)
-    async_add_entities([entity], True)
+    entities = [
+        PopularTimesSensor(coordinator, name, address, stable_unique_id),
+        PopularTimesRatingSensor(coordinator, name, f"{stable_unique_id}_rating"),
+        PopularTimesWaitSensor(coordinator, name, f"{stable_unique_id}_wait"),
+        PopularTimesSpentSensor(coordinator, name, f"{stable_unique_id}_spent"),
+    ]
+    async_add_entities(entities, True)
 
 
 class PopularTimesSensor(CoordinatorEntity, SensorEntity):
@@ -80,6 +86,18 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
             "popularity_friday": None,
             "popularity_saturday": None,
             "popularity_sunday": None,
+        }
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Group this sensor under a Device for the venue."""
+        from .const import DOMAIN
+        entry = self.platform.config_entry
+        return {
+            "identifiers": {(DOMAIN, entry.entry_id)},
+            "name": self._name,
+            "manufacturer": "Popular Times",
+            "model": "Google Maps Scraping",
         }
 
     @property
@@ -194,4 +212,75 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
             self._attributes.update(attrs)
         self.async_write_ha_state()
 
-    # Updates are handled by the DataUpdateCoordinator; no per-entity async_update needed
+
+class PopularTimesRatingSensor(CoordinatorEntity, SensorEntity):
+    """Google Maps star rating for the venue."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:star"
+    _attr_native_unit_of_measurement = "stars"
+
+    def __init__(self, coordinator, name: str, unique_id: str) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{name} Rating"
+        self._attr_unique_id = unique_id
+
+    @property
+    def device_info(self):
+        from .const import DOMAIN
+        entry = self.platform.config_entry
+        return {"identifiers": {(DOMAIN, entry.entry_id)}}
+
+    @property
+    def native_value(self):
+        return getattr(self.coordinator, "data", {}).get("attributes", {}).get("rating")
+
+
+class PopularTimesWaitSensor(CoordinatorEntity, SensorEntity):
+    """Estimated wait time at the venue."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_icon = "mdi:human-queue"
+
+    def __init__(self, coordinator, name: str, unique_id: str) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{name} Wait Time"
+        self._attr_unique_id = unique_id
+
+    @property
+    def device_info(self):
+        from .const import DOMAIN
+        entry = self.platform.config_entry
+        return {"identifiers": {(DOMAIN, entry.entry_id)}}
+
+    @property
+    def native_value(self):
+        val = getattr(self.coordinator, "data", {}).get("attributes", {}).get("time_wait")
+        return int(val) if isinstance(val, (int, float)) else None
+
+
+class PopularTimesSpentSensor(CoordinatorEntity, SensorEntity):
+    """Average time people spend at the venue."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_icon = "mdi:clock-fast"
+
+    def __init__(self, coordinator, name: str, unique_id: str) -> None:
+        super().__init__(coordinator)
+        self._attr_name = f"{name} Time Spent"
+        self._attr_unique_id = unique_id
+
+    @property
+    def device_info(self):
+        from .const import DOMAIN
+        entry = self.platform.config_entry
+        return {"identifiers": {(DOMAIN, entry.entry_id)}}
+
+    @property
+    def native_value(self):
+        val = getattr(self.coordinator, "data", {}).get("attributes", {}).get("time_spent")
+        return int(val) if isinstance(val, (int, float)) else None
