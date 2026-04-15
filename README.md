@@ -1,66 +1,59 @@
-# Updated with AI - Not fit for human consumption
-
 # hass-populartimes
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
 
-## Description
-This is a custom component for Home Assistant.
-The component generates a sensor which shows the current popularity for a place which can be found in Google Maps using the Places API.
 
-Sensor attributes are also generated which indicate past popularity at each hour of the day. 
+A modern Home Assistant integration that scrapes Google Maps to provide popular times, wait times, and ratings for venues without requiring a Google Maps API Key.
 
-## Updated requirements
+This is an updated version and fork of the original work by [freakshock88](https://github.com/freakshock88/hass-populartimes).
 
-Since updating to a new fork of populartimes, a Google Places API key or Places Id is no longer required.
+## Features
+- **Multi-Sensor Support**: Each venue creates a Device with four sensors:
+  - **Popularity**: Current occupancy percentage.
+  - **Rating**: Average star rating.
+  - **Wait Time**: Estimated time spent waiting for service.
+  - **Time Spent**: Average duration of stay.
+- **Dynamic Icons**: Intelligent clock icons that change based on the current hour.
+  - Filled icons represent **Live** data.
+  - Outlined icons represent **Historical** trends when live data is unavailable.
+- **Rich Attributes**: Includes geographical coordinates, postal address, and hour-by-hour popularity trends for each day of the week.
+- **UI Configurable**: Fully managed via the Integrations dashboard. No YAML required.
+- **Customizable**: Adjust update intervals, retry logic, and icons directly in the UI.
 
 ## Installation
-Either:
-1. Install via HACS
-2. Download files as zip and put the contents of the populartimes folder in your home assistant custom_components folder.
+### Option 1: HACS (Recommended)
+1. Open HACS in Home Assistant.
+2. Click the three dots in the top-right corner and select **Custom repositories**.
+3. Paste this repository's URL (`https://github.com/LuisFlores3/hass-populartimes`) and select **Integration** as the category.
+4. Click **Add**, then search for "Popular Times" in HACS and click **Download**.
+5. Restart Home Assistant.
 
-## Configure via UI (recommended)
-After installing the integration files:
-
-1. In Home Assistant, go to Settings → Devices & Services → Add Integration.
-2. Search for "Popular Times".
-3. Enter:
-  - Name: Friendly name for the sensor (e.g., Charlie Browns)
-  - Address: A precise postal address (e.g., "123 Main St, City, State, Country").
-4. Submit to create the sensor.
-
-Entity ID default for new sensors:
-- The entity_id will by default be created as `sensor.bar_{slugified_name}` (for example: `sensor.bar_charlie_browns`).
-- You can always manually change the entity ID from the entity settings if desired.
-
+### Option 2: Manual
+1. Download the repository as a ZIP.
+2. Copy `custom_components/populartimes` to your `config/custom_components/` directory.
+3. Restart Home Assistant.
 
 ## Configuration
+1. Go to **Settings** -> **Devices & Services**.
+2. Click **+ Add Integration** and search for **Popular Times**.
+3. Enter a **Name** (e.g., "The Local Bar") and a **Precise Address**. 
+4. The integration will automatically find the venue and create the entities.
 
-```yaml
-sensor:
-  platform: populartimes
-  name: 'your_sensor_name_here'
-  address: 'your_address_here'
-```
-Address tips:
-- Enter the standard postal address. You do not need to include the place name; the integration sends "Name, Address" to Google behind the scenes for better matching.
+### Updating Configuration
+To change the address or adjust polling/icon settings:
+1. Open the **Popular Times** entry in the Integrations dashboard.
+2. Click **Configure** or the **Gear Icon** to modify settings without restarting.
 
-## YAML → UI migration (YAML deprecated)
-- YAML configuration is deprecated and no longer used for setup.
-- If YAML is present, it will be imported into a UI config entry on the next restart, and then ignored.
-- A persistent notification will indicate that YAML can be removed from `configuration.yaml`.
+## Data Source
+This integration uses the [LivePopularTimes](https://github.com/GrocerCheck/LivePopularTimes) library to fetch data directly from Google Maps. It does **not** use the official Places API, meaning no API keys or billing are required.
 
-## Edit after setup
-- To change the sensor Name or Address later, open the Popular Times integration and click the gear icon for the entry, then adjust the fields and save.
-- Changing the Name updates the entity's friendly name. Existing entity IDs are not changed automatically; you can rename the entity ID from the entity settings if you want.
-
-## Live vs historical data
-Sometimes Google Maps does not provide live popularity data for the place you want to query.
-In that case the historical data is used to set the sensor state.
-To indicate this, the attribute `popularity_is_live` is set to `false`.
-
-## Links:
-[Home Assistant Community Topic](https://community.home-assistant.io/t/google-maps-places-popular-times-component/147362)
+## Legacy YAML Support
+YAML configuration is deprecated. Any existing YAML config is automatically imported into the UI on startup. Once imported, you can safely remove the `populartimes` block from your `configuration.yaml`.
 
 ## Credits
+- Developed by [LuisFlores3](https://github.com/LuisFlores3).
+- Forked from [freakshock88/hass-populartimes](https://github.com/freakshock88/hass-populartimes).
+- Uses the [LivePopularTimes](https://github.com/GrocerCheck/LivePopularTimes) library (forked from [m-wrzr/populartimes](https://github.com/m-wrzr/populartimes)).
 
-This component uses the [LivePopularTimes](https://github.com/GrocerCheck/LivePopularTimes) library, which is a fork of the previously used [populartimes](https://github.com/m-wrzr/populartimes) library.
+---
+> [!NOTE]
+> This integration has been modernized and refactored using artificial intelligence to enhance its architecture and performance characteristics.
