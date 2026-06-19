@@ -43,11 +43,29 @@ To change the address or adjust polling/icon settings:
 1. Open the **Popular Times** entry in the Integrations dashboard.
 2. Click **Configure** or the **Gear Icon** to modify settings without restarting.
 
+## Auto-Updates & Refresh
+Each venue's sensor updates automatically on the configured polling interval
+(default: every 10 minutes; adjustable from 1–120 minutes in the options).
+
+To force an immediate update, the integration registers two actions, available
+under **Developer Tools → Actions**:
+
+- **`populartimes.refresh`** — Re-fetch data right now for a single entry (pass
+  an `entry_id`) or for every Popular Times entry when called with no target.
+  Entities stay available during the refresh, unlike a full reload — making it
+  ideal for dashboards and automations that need data on demand.
+- **`populartimes.update_entry`** — Update an entry's options (name, address,
+  icon, update interval) programmatically without opening the UI.
+
 ## Data Source
 This integration uses the [LivePopularTimes](https://github.com/GrocerCheck/LivePopularTimes) library to fetch data directly from Google Maps. It does **not** use the official Places API, meaning no API keys or billing are required.
 
 ## Legacy YAML Support
 YAML configuration is deprecated. Any existing YAML config is automatically imported into the UI on startup. Once imported, you can safely remove the `populartimes` block from your `configuration.yaml`.
+
+## Changelog
+See [CHANGELOG.md](CHANGELOG.md) for release notes. The latest release (2.1.0)
+fixes auto-updates and adds the `populartimes.refresh` service.
 
 ## Credits
 - Developed by [LuisFlores3](https://github.com/LuisFlores3).

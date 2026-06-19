@@ -249,6 +249,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 			_handle_update_entry,
 		)
 		domain_data["service_update_registered"] = True
+
+	# On-demand refresh service: re-fetch data for the targeted config entries
+	# (or all of them when no entry_id is given) without tearing entities down,
+	# unlike reload_config_entry which briefly makes entities unavailable.
+	if not domain_data.get("service_refresh_registered"):
+		async def _handle_refresh(call) -> None:
+			ids = call.data.get("entry_id")
+			ids = [ids] if isinstance(ids, str) else ids
+			for e in hass.config_entries.async_entries(DOMAIN):
+				if not ids or e.entry_id in ids:
+					coord = hass.data.get(DOMAIN, {}).get(e.entry_id, {}).get("coordinator")
+					if coord:
+						await coord.async_request_refresh()
+
+		hass.services.async_register(DOMAIN, "refresh", _handle_refresh)
+		domain_data["service_refresh_registered"] = True
 	return True
 
 

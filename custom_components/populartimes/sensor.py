@@ -162,6 +162,12 @@ class PopularTimesSensor(CoordinatorEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Handle entity added to hass. Sync name/address from entry on reloads."""
+        # Subscribe to the coordinator. CoordinatorEntity.async_added_to_hass()
+        # registers this entity as a listener via async_add_listener(), which is
+        # what schedules the coordinator's periodic refresh and routes updates to
+        # _handle_coordinator_update(). Without this super() call the sensor froze
+        # after the initial setup fetch.
+        await super().async_added_to_hass()
         entry = self.platform.config_entry  # type: ignore[assignment]
         if entry:
             # Options override data if provided
